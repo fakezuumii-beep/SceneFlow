@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SOLO · 单人播客工作台</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="SOLO 首页"><span class="brandmark">◒</span> SOLO<span class="brand-dot">●</span></a>
+  <div class="tagline">一个声音，也能有好画面。</div>
+  <button class="new-project" id="newProject"><span>＋</span> 新建一期播客</button>
+  <div class="side-heading">我的播客 <span id="projectCount">0</span></div>
+  <nav id="projects"></nav>
+  <div class="side-bottom"><div class="edition"><span class="pulse"></span> SINGLE HOST / 单人版</div><button id="settingsButton" class="settings-button">⚙ <span>连接与设置</span><span>↗</span></button><p>音频驱动 · 本地工作台</p></div>
+</aside>
+<main>
+  <header><div class="crumb">我的播客 <span>/</span> <span id="crumbTitle">新的创作</span></div><div class="header-right"><span class="local-pill"><i></i> 本地保存</span><button id="exportButton" class="button dark">导出视频 <span>↗</span></button></div></header>
+  <section class="project-heading"><div><div class="eyebrow">AUDIO TO STORY</div><input id="projectName" aria-label="项目名称" value="我的第一期单人播客"><p>让叙述留在耳边，让画面跟上思路。</p></div><button id="autoButton" class="button primary"><span>✦</span> 一键生成播客</button></section>
+  <section class="pipeline" id="pipeline"></section>
+  <div id="serviceNotice" class="statusbar error hidden" role="status"></div>
+  <div id="planNotice" class="statusbar hidden" role="status"></div>
+  <div class="statusbar hidden" id="statusbar"><div class="status-message"></div><div class="progress"><i></i></div><button id="resumeJob" class="button hidden">继续生成</button><button id="cancelJob" class="text-button">停止</button></div>
+  <section class="editor">
+    <div class="viewer-column">
+      <div class="section-title"><h2>画面预览</h2><div class="preview-label"><span id="currentKind">A-ROLL</span><span>16:9</span></div></div>
+      <div class="preview" id="preview"><img id="hostPreview" alt="单人播客人物图占位"><video id="brollPreview" muted playsinline preload="auto" class="hidden"></video><div class="preview-top"><span>SOLO<span> / </span>PODCAST</span><span class="onair">● AUDIO FIRST</span></div><div class="preview-caption" id="previewCaption"></div><div class="preview-empty" id="previewEmpty"><span>01 — YOUR VOICE, YOUR STORY</span><h3>从一个声音开始。</h3><p>输入文字或导入音频，让每段表达都有合适的画面。</p></div></div>
+      <div class="player"><button id="playButton" aria-label="播放或暂停">▶</button><span id="currentTime">00:00</span><input type="range" id="scrubber" min="0" max="100" step="0.01" value="0" aria-label="播放位置"><span id="totalTime">00:00</span><button id="muteButton" aria-label="静音">♪</button></div>
+      <audio id="audioPlayer" preload="metadata"></audio>
+      <section class="timeline-section"><div class="section-title"><h2>镜头时间线</h2><div class="legend"><i class="green"></i>A-roll 人物<i class="ochre"></i>B-roll 素材</div></div><div class="ruler" id="ruler"></div><div class="timeline-lane"><span>画面</span><div id="visualTimeline" class="visual-timeline"></div></div><div class="timeline-lane"><span>音频</span><div id="waveform" class="waveform"></div></div><div class="timeline-note">原音频连续播放 · B-roll 素材原声静音</div></section>
+      <section class="shot-section"><div class="section-title"><div class="title-group"><h2>语义分镜</h2><span class="count-badge" id="shotCount">0 个镜头</span></div><div class="shot-tabs"><button class="active" data-filter="all">全部</button><button data-filter="A">A-roll</button><button data-filter="B">B-roll</button></div></div><div id="shotList"></div></section>
+    </div>
+    <aside class="inspector">
+      <div class="inspector-tabs"><button data-panel="setup" class="active">制作设置</button><button data-panel="shot">镜头详情</button><button data-panel="exports">导出记录</button></div>
+      <section id="setupPanel" class="panel">
+        <div class="field-heading"><span class="step-circle">1</span><h3>声音与原稿</h3></div>
+        <div class="input-tabs"><button class="active" data-input="text">文字配音</button><button data-input="audio">导入音频</button></div>
+        <div id="textInputPanel">
+          <label class="detail-field">播客原稿<textarea id="scriptText" rows="7" maxlength="20000" placeholder="把这一期想说的话写在这里。选择声音后，可先试听配音，也可以直接一键生成播客。"></textarea></label>
+          <div class="two-cols"><label class="detail-field">配音引擎<select id="ttsProvider"><option value="azure-v1">Azure TTS V1 · 默认</option><option value="kokoro">Kokoro-82M · 本地备用</option></select></label><label class="detail-field">语言<select id="ttsLanguage"><option value="Chinese">中文</option><option value="English">英语</option></select></label></div>
+          <div class="two-cols"><label class="detail-field">配音声音<select id="ttsSpeaker"><option value="zh-CN-XiaoxiaoNeural">中文女声 · 晓晓（默认）</option></select></label><label class="detail-field">语速<select id="ttsSpeed"><option value="0.85">0.85× · 舒缓</option><option value="0.95">0.95× · 从容</option><option value="1" selected>1.0× · 正常</option><option value="1.1">1.1× · 明快</option><option value="1.2">1.2× · 紧凑</option></select></label></div>
+          <button class="button wide" id="ttsButton">生成配音并试听</button><p class="help" id="ttsNotice">Azure TTS V1 · 默认联网配音，无需 Azure Key。完成后可用左侧播放器试听。</p>
+          <a class="text-button hidden" id="downloadVoice" download>下载配音 WAV</a>
+        </div>
+        <div id="audioInputPanel" class="hidden">
+        <label class="dropzone" id="audioDrop"><input type="file" id="audioUpload" accept="audio/*,.mp4,.webm" hidden><span class="upload-symbol">↥</span><strong id="audioFilename">点击或拖入音频</strong><span>MP3 / WAV / M4A · 最长 4 小时</span></label>
+        <div class="upload-actions"><button class="button small" id="transcribeButton">自动转录</button><label class="text-button">导入 SRT<input id="srtUpload" type="file" accept=".srt" hidden></label><a class="text-button hidden" id="downloadSrt">下载字幕</a></div>
+        </div>
+        <div class="divider"></div><div class="field-heading"><span class="step-circle">2</span><h3>A-roll 人物口型</h3><span class="subtle-tag">MuseTalk 1.5</span></div>
+        <label class="portrait-upload"><img id="portraitThumb" alt="人物素材封面"><video id="portraitVideo" class="hidden" muted loop playsinline preload="metadata" aria-label="人物循环视频预览"></video><span><strong>更换人物图片 / 循环视频</strong><small id="portraitLabel">已提供默认播客主持人<br>单人正脸清晰，嘴部无遮挡</small></span><span>＋</span><input type="file" id="portraitUpload" accept="image/png,image/jpeg,image/webp,.mp4,.mov,.mkv,.webm,.m4v" hidden></label>
+        <label class="detail-field">从「我的素材」选择<select id="hostMaterial"><option value="">选择人物图片或循环视频…</option></select></label><button class="button wide" id="useHostMaterial">使用所选人物素材</button>
+        <p class="help" id="arollSummary">按 A-roll 的原音频生成口型，保持原镜头时间。</p><button class="button wide" id="arollButton">生成 A-roll 口型</button><p class="help">视频会按原顺序循环，保留已有眨眼、头部和身体动作，原声静音。口型由播客音频驱动；请选择首尾衔接自然的单人视频。一键生成和导出会自动补齐口型。</p>
+        <div class="divider"></div><div class="field-heading"><span class="step-circle">3</span><h3>镜头编排</h3></div>
+        <label class="field-label">B-roll 画面占比 <strong id="ratioValue">60%</strong></label><input id="ratio" type="range" min="0" max="80" step="5" value="60"><div class="range-ends"><span>多一些人物叙述</span><span>多一些场景画面</span></div>
+        <p class="help">建议 60%，按内容匹配画面；人物连续出镜不超过 10 秒，B-roll 约 4 秒一镜、最长 4 秒。调整后重新分镜生效。</p>
+        <label class="field-label spaced">单镜头建议时长 <span>语义优先</span></label><select id="shotLength"><option value="10">紧凑 · 约 5–10 秒</option><option value="14" selected>自然 · 约 5–14 秒</option><option value="22">舒缓 · 约 8–22 秒</option></select>
+        <button class="button wide" id="planButton">✦ 生成语义分镜</button>
+        <div class="divider"></div><div class="field-heading"><span class="step-circle">4</span><h3>B-roll 素材</h3></div>
+        <select id="materialSource"><option value="pexels">Pexels · 库存视频</option><option value="pixabay">Pixabay · 库存视频</option></select><p class="help">根据每段内容提取英文检索词，下载横屏素材。你可以逐镜头换片，或导入本地素材。</p><button id="materialsButton" class="button wide">↗ 自动补齐素材</button>
+        <div class="divider"></div><label class="toggle-label"><span>导出时显示字幕</span><input type="checkbox" id="subtitlesToggle" checked></label><label class="field-label spaced">成片画质</label><select id="resolution"><option value="1080p">1080p · 1920 × 1080</option><option value="720p">720p · 1280 × 720</option></select>
+      </section>
+      <section id="shotPanel" class="panel hidden"></section><section id="exportsPanel" class="panel hidden"></section>
+    </aside>
+  </section>
+  <footer><span>SOLO WORKSPACE</span><span>叙述是主线，画面是注脚。</span><span>V0.1 / LOCAL</span></footer>
+</main>
+<dialog id="settingsDialog"><div class="dialog-head"><div><div class="eyebrow">CONNECTIONS</div><h2>连接与设置</h2></div><button class="close-dialog" aria-label="关闭">×</button></div><p class="help">密钥仅保存在本机 data/private，已被 Git 忽略。留空会保留已有密钥。</p><form id="settingsForm"><div id="connectionStatus" class="connection-status"></div><div class="local-model-box"><strong>语音与本地媒体引擎</strong><p id="localModelStatus" class="help">正在检查组件…</p><button type="button" id="installModels" class="button wide">安装本地媒体引擎</button><p class="help">Azure TTS V1 是默认联网配音，不需要 Azure Key；安装按钮用于校验备用 Kokoro 与独立 MuseTalk。分镜固定使用 DeepSeek API，口型不访问 ComfyUI。</p></div><label>DeepSeek API 地址<input name="llm_base_url" placeholder="https://api.deepseek.com"></label><label>DeepSeek 模型<input name="llm_model" placeholder="deepseek-v4-flash"></label><label>DeepSeek API Key<input name="llm_api_key" type="password" autocomplete="new-password" placeholder="已配置时无需重复填写"></label><div class="two-cols"><label>Pexels API Key<input name="pexels_api_key" type="password" autocomplete="new-password" placeholder="一键匹配素材所需"></label><label>Pixabay Key（可选）<input name="pixabay_api_key" type="password" autocomplete="new-password" placeholder="留空保留"></label></div><div class="two-cols"><label>本地转录模型<select name="asr_model"><option value="large-v3">large-v3 · 更准确</option><option value="small">small · 更快</option><option value="base">base · 轻量</option></select></label><label>转录设备<select name="asr_device"><option value="auto">自动 · GPU 优先</option><option value="cpu">CPU</option><option value="cuda">CUDA GPU</option></select></label></div><label>口型显存档位（MuseTalk 每批帧数，越小越省显存）<select name="aroll_batch_size"><option value="8">标准 · 建议 6GB 以上显存</option><option value="4">均衡 · 建议 4GB 显存</option><option value="2">低配 · 约 3GB 显存，较慢</option><option value="1">最低 · 约 2GB 显存，最慢；显存不足时会自动降档重试</option></select></label><p class="help">Azure 配音会把原稿文字发送到微软在线语音服务；音频、人物素材、口型和渲染仍留在本机。转录文字与素材检索词会发送给所配置的 API。</p><button class="button primary wide" type="submit">保存设置</button></form></dialog>
+<dialog id="newDialog"><div class="dialog-head"><h2>新建一期播客</h2><button class="close-dialog" aria-label="关闭">×</button></div><form id="newForm"><label>播客名称<input name="name" required placeholder="给这一期取个名字" autocomplete="off"></label><button class="button primary wide">创建项目</button></form></dialog>
+<dialog id="confirmDialog"><div class="dialog-head"><h2>重新处理</h2><button class="close-dialog" aria-label="关闭">×</button></div><p id="confirmMessage"></p><div class="confirm-actions"><button class="button" id="confirmNo">取消</button><button class="button primary" id="confirmYes">继续</button></div></dialog>
+<div id="toast" role="status"></div>
+<script src="/app.js?v=20260906-azure-tts-v1"></script></body></html>
