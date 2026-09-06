@@ -59,6 +59,21 @@ class ArollTests(TestCase):
             p['portrait']='assets/new.jpg';(folder/p['portrait']).write_bytes(b'a different immutable uploaded image')
             self.assertFalse(aroll.is_ready(p,s))
 
+    def test_adjacent_aroll_shares_one_generation_run(self):
+        shots=[{'id':'a1','kind':'A','start':0,'end':3.7},
+               {'id':'b1','kind':'B','start':3.7,'end':7.1},
+               {'id':'a2','kind':'A','start':7.1,'end':10.8},
+               {'id':'a3','kind':'A','start':10.8,'end':16.284}]
+        runs=aroll.contiguous_runs(shots)
+        self.assertEqual([[s['id'] for s in run] for run in runs],[['a1'],['a2','a3']])
+
+    def test_continuous_run_frame_windows_touch_without_gap_or_overlap(self):
+        context_start=14.52
+        a05_start=round((14.72-context_start)*aroll.FPS);cut=round((18.42-context_start)*aroll.FPS)
+        a06_start=round((18.42-context_start)*aroll.FPS);end=round((23.904-context_start)*aroll.FPS)
+        self.assertEqual(cut,a06_start)
+        self.assertEqual((cut-a05_start)+(end-a06_start),end-a05_start)
+
     def test_shot_frame_counts_use_full_duration(self):
         for duration in (2.56,7.1,9.97):self.assertEqual(round(duration*aroll.FPS),round(duration*25))
 

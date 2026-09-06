@@ -24,7 +24,7 @@
       <div class="player"><button id="playButton" aria-label="播放或暂停">▶</button><span id="currentTime">00:00</span><input type="range" id="scrubber" min="0" max="100" step="0.01" value="0" aria-label="播放位置"><span id="totalTime">00:00</span><button id="muteButton" aria-label="静音">♪</button></div>
       <audio id="audioPlayer" preload="metadata"></audio>
       <section class="timeline-section"><div class="section-title"><h2>镜头时间线</h2><div class="legend"><i class="green"></i>A-roll 人物<i class="ochre"></i>B-roll 素材</div></div><div class="ruler" id="ruler"></div><div class="timeline-lane"><span>画面</span><div id="visualTimeline" class="visual-timeline"></div></div><div class="timeline-lane"><span>音频</span><div id="waveform" class="waveform"></div></div><div class="timeline-note">原音频连续播放 · B-roll 素材原声静音</div></section>
-      <section class="shot-section"><div class="section-title"><div class="title-group"><h2>语义分镜</h2><span class="count-badge" id="shotCount">0 个镜头</span></div><div class="shot-tabs"><button class="active" data-filter="all">全部</button><button data-filter="A">A-roll</button><button data-filter="B">B-roll</button></div></div><div id="shotList"></div></section>
+      <section class="shot-section"><div class="section-title"><div class="title-group"><h2>视觉镜头</h2><span class="count-badge" id="shotCount">0 个镜头</span></div><div class="shot-tabs"><button class="active" data-filter="all">全部</button><button data-filter="A">A-roll</button><button data-filter="B">B-roll</button></div></div><div id="shotList"></div></section>
     </div>
     <aside class="inspector">
       <div class="inspector-tabs"><button data-panel="setup" class="active">制作设置</button><button data-panel="shot">镜头详情</button><button data-panel="exports">导出记录</button></div>
@@ -48,11 +48,11 @@
         <p class="help" id="arollSummary">按 A-roll 的原音频生成口型，保持原镜头时间。</p><button class="button wide" id="arollButton">生成 A-roll 口型</button><p class="help">视频会按原顺序循环，保留已有眨眼、头部和身体动作，原声静音。口型由播客音频驱动；请选择首尾衔接自然的单人视频。一键生成和导出会自动补齐口型。</p>
         <div class="divider"></div><div class="field-heading"><span class="step-circle">3</span><h3>镜头编排</h3></div>
         <label class="field-label">B-roll 画面占比 <strong id="ratioValue">60%</strong></label><input id="ratio" type="range" min="0" max="80" step="5" value="60"><div class="range-ends"><span>多一些人物叙述</span><span>多一些场景画面</span></div>
-        <p class="help">建议 60%，按内容匹配画面；人物连续出镜不超过 10 秒，B-roll 约 4 秒一镜、最长 4 秒。调整后重新分镜生效。</p>
-        <label class="field-label spaced">单镜头建议时长 <span>语义优先</span></label><select id="shotLength"><option value="10">紧凑 · 约 5–10 秒</option><option value="14" selected>自然 · 约 5–14 秒</option><option value="22">舒缓 · 约 8–22 秒</option></select>
-        <button class="button wide" id="planButton">✦ 生成语义分镜</button>
+        <p class="help">LLM 只判断语义。内容分低于 0 判 A、高于 2 判 B；0–2 分不再加减节奏分，直接按全片 A/B 比例目标决定。短句合并按实际时长加权。</p>
+        <label class="field-label spaced">自动镜头节奏 <span>规则配置</span></label><select id="shotLength" disabled><option value="semantic" selected>自然 · 语义节点优先</option></select>
+        <button class="button wide" id="planButton">✦ 生成规则分镜</button>
         <div class="divider"></div><div class="field-heading"><span class="step-circle">4</span><h3>B-roll 素材</h3></div>
-        <select id="materialSource"><option value="pexels">Pexels · 库存视频</option><option value="pixabay">Pixabay · 库存视频</option></select><p class="help">根据每段内容提取英文检索词，下载横屏素材。你可以逐镜头换片，或导入本地素材。</p><button id="materialsButton" class="button wide">↗ 自动补齐素材</button>
+        <select id="materialSource"><option value="pexels">Pexels · 库存视频</option><option value="pixabay">Pixabay · 库存视频</option></select><p class="help">根据语义中的具体可视化对象搜索横屏素材。你可以逐镜头换片，或导入本地素材。</p><button id="materialsButton" class="button wide">↗ 自动补齐素材</button>
         <div class="divider"></div><label class="toggle-label"><span>导出时显示字幕</span><input type="checkbox" id="subtitlesToggle" checked></label><label class="field-label spaced">成片画质</label><select id="resolution"><option value="1080p">1080p · 1920 × 1080</option><option value="720p">720p · 1280 × 720</option></select>
       </section>
       <section id="shotPanel" class="panel hidden"></section><section id="exportsPanel" class="panel hidden"></section>

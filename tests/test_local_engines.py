@@ -53,7 +53,7 @@ class LocalEngineTests(unittest.TestCase):
                 q=core.read_project(pid);q['shots']=[{'kind':'A'}];core.save_project(q)
             with patch.object(le,'synthesize',side_effect=synthesize) as tts,patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=plan) as planner,patch.object(core,'materials'),patch('aroll.generate'),patch.object(core,'render'):
                 core.job_worker(pid,'all');core.ACTIVE[pid]={'cancel':False};core.job_worker(pid,'all')
-                self.assertEqual(tts.call_count,1);self.assertEqual(planner.call_count,1);asr.assert_not_called()
+                self.assertEqual(tts.call_count,1);self.assertEqual(planner.call_count,1);self.assertEqual(asr.call_count,1)
 
     def test_bad_voice_empty_text_and_model_truncation_rejected(self):
         for value in ({'text':''},{'text':'x'*20001},{'text':'hi','provider':'evil'},{'text':'hi','speed':3}):

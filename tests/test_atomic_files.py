@@ -46,9 +46,11 @@ class AtomicFileTests(unittest.TestCase):
     def test_concurrent_saves_do_not_share_temporary_names(self):
         with tempfile.TemporaryDirectory() as folder:
             target=Path(folder)/'project.json';barrier=threading.Barrier(2)
-            real_replace=os.replace;seen=[]
+            real_replace=os.replace;seen=[];arrived=set()
             def replace(source,destination):
-                seen.append(source);barrier.wait(timeout=5)
+                seen.append(source)
+                if source not in arrived:
+                    arrived.add(source);barrier.wait(timeout=5)
                 return real_replace(source,destination)
             with patch.object(atomic_files.os,'replace',side_effect=replace):
                 with ThreadPoolExecutor(max_workers=2) as pool:

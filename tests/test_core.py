@@ -1,10 +1,31 @@
-import copy, json, math, sys, unittest
+import copy, json, math, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import core
 from unittest.mock import patch
 
 class TimelineTests(unittest.TestCase):
+    def test_parse_silencedetect_pairs_ordered_intervals(self):
+        text='silence_start: 11.160312\nsilence_end: 12.067146 | silence_duration: 0.906834\n'
+        self.assertEqual(core.parse_silencedetect(text),[{'start':11.160312,'end':12.067146}])
+
+    def test_aroll_motion_filter_is_seek_safe_and_directional(self):
+        push=core.framing_filter(1920,1080,30,150,'medium','push_in',.08)
+        pull=core.framing_filter(1920,1080,30,150,'medium_close','pull_out',.08)
+        self.assertIn("1+0.08*on/149",push)
+        self.assertIn("1+0.08*(1-on/149)",pull)
+        self.assertIn('zoompan=',push);self.assertIn('scale=2342:1318',pull)
+
+    def test_aroll_motion_filter_renders(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source.mp4';output=Path(folder)/'motion.mp4'
+            core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','color=c=navy:s=320x180:r=30:d=1',
+                      '-c:v','libx264','-pix_fmt','yuv420p',source])
+            core.run([core.FFMPEG,'-y','-v','error','-i',source,'-vf',core.framing_filter(320,180,30,30,'medium','push_in',.08),
+                      '-frames:v','30','-c:v','libx264','-pix_fmt','yuv420p',output])
+            info=core.probe(output);video=next(s for s in info['streams'] if s['codec_type']=='video')
+            self.assertEqual((video['width'],video['height']),(320,180))
+
     def test_aroll_limit_counts_silence_tail_and_adjacent_runs(self):
         units=[{'id':0,'start':0,'end':4},{'id':1,'start':5,'end':9}]
         a={'from':0,'to':1,'kind':'A','title':'人物','reason':'','keywords':[]}
@@ -12,23 +33,6 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):core.validate_aroll_duration([a],units,10.001,10)
         split=[dict(a,to=0),dict(a,**{'from':1})]
         with self.assertRaises(ValueError):core.validate_aroll_duration(split,units,16.9,10)
-
-    def test_overlong_aroll_repair_and_broll_preservation(self):
-        units=[{'id':i,'start':i*5,'end':i*5+4,'text':'原文'} for i in range(5)]
-        a={'from':0,'to':3,'kind':'A','title':'人物','reason':'','keywords':[]}
-        b={'from':4,'to':4,'kind':'B','title':'手机','reason':'','keywords':['phone']}
-        valid={'shots':[dict(a,to=0),dict(b,**{'from':1,'to':2}),dict(a,**{'from':3,'to':3})]}
-        with patch.object(core,'chat_json',side_effect=[{'shots':[a]},valid]) as chat:
-            result=core.repair_aroll_duration([a,b],units,25,10,{})
-        self.assertEqual(chat.call_count,2)
-        self.assertEqual(result[-1],b)
-        self.assertEqual([x['kind'] for x in result],['A','B','A','B'])
-        core.validate_aroll_duration(result,units,25,10)
-        with patch.object(core,'chat_json',return_value={'shots':[a]}):
-            fallback=core.repair_aroll_duration([a,b],units,25,10,{})
-        self.assertEqual([x['kind'] for x in fallback],['A','B','A','B'])
-        self.assertIn('自动时长兜底',fallback[1]['reason'])
-        core.validate_aroll_duration(fallback,units,25,10)
 
     def test_deterministic_aroll_repair_matches_c1_boundary(self):
         units=[
@@ -106,29 +110,33 @@ class TimelineTests(unittest.TestCase):
         self.assertLessEqual(core.max_kind_run_duration(result,units,32,'A'),10)
         self.assertEqual((result[0]['kind'],result[-1]['kind']),('A','A'))
 
-    def test_plan_merges_across_batches_and_preserves_timing(self):
+    def test_plan_classifies_across_batches_then_builds_timeline(self):
         units=[{'id':i,'start':i*2+.2,'end':i*2+1.8,'text':f'原文{i}。'} for i in range(48)]
         p={'id':'test','segments':units,'duration':96.2,'shots':[],
            'options':{'broll_ratio':60,'max_shot':14},'revision':3}
-        responses=[{'shots':[{'from':0,'to':42,'kind':'B','keywords':['library']},
-                             {'from':43,'to':44,'kind':'A'}]},
-                   {'shots':[{'from':45,'to':46,'kind':'A'},
-                             {'from':47,'to':47,'kind':'B','keywords':['coffee']}]}]
+        def semantic(unit):
+            semantic_type='hook' if unit['id']==0 else 'summary' if unit['id']==47 else 'event'
+            return {'id':unit['id'],'text':unit['text'],'semantic_type':semantic_type,
+                    'visual_subject':'' if semantic_type in ('hook','summary') else '图书馆阅读',
+                    'importance':'normal','emotion':'neutral'}
+        responses=[{'segments':[semantic(unit) for unit in units[:45]]},
+                   {'segments':[semantic(unit) for unit in units[45:]]}]
         with patch.object(core,'read_project',side_effect=lambda _:copy.deepcopy(p)), \
              patch.object(core,'settings',return_value={'llm_model':'test','llm_api_key':'key'}), \
              patch.object(core,'progress'), patch.object(core,'save_project') as save, \
              patch.object(core,'chat_json',side_effect=responses) as chat:
             core.plan('test')
         result=save.call_args.args[0];shots=result['shots']
-        a=next(s for s in shots if s['kind']=='A' and s['from']<=43 and s['to']>=46)
-        self.assertEqual((a['start'],a['end']),(86.2,96.2))
-        self.assertEqual(a['text'],' '.join(u['text'] for u in units[43:48]))
-        self.assertTrue(all(round(s['end']-s['start'],3)<=4 for s in shots if s['kind']=='B'))
+        self.assertEqual((shots[0]['kind'],shots[-1]['kind']),('A','A'))
+        self.assertTrue(all(round(s['end']-s['start'],3)<=6.01 for s in shots if s['kind']=='B'))
         self.assertEqual(result['segments'],units)
+        self.assertEqual(len(result['candidate_segments']),48)
+        self.assertEqual(result['analysis']['llm_role'],'semantic_classification_only')
         core.validate_timeline(shots,p['duration'])
-        self.assertEqual(result['analysis']['merged_aroll_cuts'],1)
         second_input=json.loads(chat.call_args_list[1].args[1][1]['content'])
-        self.assertEqual(second_input['previous_shots'][-1]['to'],44)
+        self.assertNotIn('start',json.dumps(second_input,ensure_ascii=False))
+        self.assertNotIn('duration',json.dumps(second_input,ensure_ascii=False))
+        self.assertEqual(second_input['candidates'][0]['id'],45)
         self.assertEqual(p['shots'],[])
 
     def test_broll_split_preserves_a_and_selected_first_take(self):

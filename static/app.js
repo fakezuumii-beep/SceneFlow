@@ -1,6 +1,7 @@
 'use strict';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const state={project:null,projects:[],selected:null,panel:'setup',filter:'all',busy:false,polling:false,previewKey:'',pending:0,saving:Promise.resolve(),arollSupported:false,ttsStatus:null};
+let previewAnimation=0;
 const voiceCatalog={
   'azure-v1':{
     Chinese:[['zh-CN-XiaoxiaoNeural','中文女声 · 晓晓（默认）'],['zh-CN-XiaoyiNeural','中文女声 · 晓伊'],['zh-CN-liaoning-XiaobeiNeural','中文女声 · 晓北（辽宁）'],['zh-CN-shaanxi-XiaoniNeural','中文女声 · 晓妮（陕西）'],['zh-CN-XiaoxiaoMultilingualNeural-V2','中文女声 · 晓晓多语种 V2'],['zh-CN-YunjianNeural','中文男声 · 云健'],['zh-CN-YunxiNeural','中文男声 · 云希'],['zh-CN-YunxiaNeural','中文男声 · 云夏'],['zh-CN-YunyangNeural','中文男声 · 云扬']],
@@ -18,6 +19,8 @@ const legacyVoice={
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=s=>{s=Math.max(0,Number(s)||0);return (s>=3600?Math.floor(s/3600)+':':'')+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(Math.floor(s)%60).padStart(2,'0')};
 const safeURL=s=>/^https?:\/\//.test(s||'')?s:'';
+const cameraLabel=s=>({medium:'中景',medium_close:'中近景',close:'近景'}[s]||s||'');
+const changeLabel=s=>({hold:'保持长镜头',cut_in:'切近',cut_out:'切远',push_in:'轻微推近',pull_out:'轻微拉远',broll_insert:'短 B-roll 插入',return_primary:'回主镜头',broll:'B-roll'}[s]||s||'');
 const media=name=>state.project?`/api/projects/${state.project.id}/files/${String(name).split('/').map(encodeURIComponent).join('/')}`:'';
 const host=()=>media(state.project?.host_asset||state.project?.portrait_poster||state.project?.portrait||'assets/placeholder.jpg');
 const hostMedia=()=>media(state.project?.host_media_asset||state.project?.portrait||'assets/placeholder.jpg');
@@ -87,7 +90,7 @@ function renderAll(){
 function renderPipeline(){
   const p=state.project,b=p.shots.filter(s=>s.kind==='B'),ready=b.filter(s=>s.asset).length,a=p.shots.filter(s=>s.kind==='A'),aReady=a.filter(s=>s.aroll_ready).length;
   $('#arollSummary').textContent=!state.arollSupported?'工作台更新待载入，已完成的口型视频会保留。':a.length?`MuseTalk 1.5 · ${aReady}/${a.length} 段口型已就绪`:'MuseTalk 1.5 · 分镜后按对应原音频生成口型';
-  const stages=[['文字 / 音频',p.audio?fmt(p.duration)+' · 已就绪':'声音是故事的起点',!!p.audio],['理解与分镜',p.shots.length?`${p.shots.length} 个语义镜头`:p.segments.length?`${p.segments.length} 句 · 待分镜`:'转录 · 语义分析',!!p.shots.length],['匹配画面',p.shots.length?`口型 ${aReady}/${a.length} · 素材 ${ready}/${b.length}`:'人物口型 · 场景素材',!!p.shots.length&&ready===b.length&&aReady===a.length],['导出成片',p.exports.some(e=>e.revision===p.revision)?'当前版本已导出':'预览 · 字幕 · MP4',p.exports.some(e=>e.revision===p.revision)]];
+  const stages=[['文字 / 音频',p.audio?fmt(p.duration)+' · 已就绪':'声音是故事的起点',!!p.audio],['理解与分镜',p.shots.length?`${p.narrative_segments?.length||0} 个叙事段 · ${p.shots.length} 个视觉镜头`:p.segments.length?`${p.segments.length} 个候选段 · 待判断`:'时间戳 · 语义分类',!!p.shots.length],['匹配画面',p.shots.length?`口型 ${aReady}/${a.length} · 素材 ${ready}/${b.length}`:'人物口型 · 场景素材',!!p.shots.length&&ready===b.length&&aReady===a.length],['导出成片',p.exports.some(e=>e.revision===p.revision)?'当前版本已导出':'预览 · 字幕 · MP4',p.exports.some(e=>e.revision===p.revision)]];
   const next=stages.findIndex(s=>!s[2]);$('#pipeline').innerHTML=stages.map((s,i)=>`<div class="pipeline-step ${s[2]?'done':i===next?'current':''}"><span class="pipeline-number">${s[2]?'✓':String(i+1).padStart(2,'0')}</span><div><strong>${s[0]}</strong><small>${esc(s[1])}</small></div></div>`).join('');
 }
 function renderStatus(){
@@ -119,7 +122,7 @@ function renderTimeline(){
 }
 function renderShots(){
   const p=state.project;$('#shotCount').textContent=p.shots.length+' 个镜头';const visible=p.shots.filter(s=>state.filter==='all'||s.kind===state.filter);
-  if(!visible.length){$('#shotList').innerHTML=`<div class="empty-shots"><strong>${p.shots.length?'这个分类还没有镜头':'镜头会从你的讲述里自然生长。'}</strong>${p.shots.length?'切换到「全部」查看其他镜头。':'先输入文字生成配音，或导入音频后转录，再生成语义分镜。<br>观点与转折留给人物，具体场景交给 B-roll。'}</div>`;return}
+  if(!visible.length){$('#shotList').innerHTML=`<div class="empty-shots"><strong>${p.shots.length?'这个分类还没有镜头':'镜头会从你的讲述里自然生长。'}</strong>${p.shots.length?'切换到「全部」查看其他镜头。':'先输入文字生成配音，或导入音频后转录，再生成规则分镜。<br>LLM 理解语义，程序决定 A/B 与真实时长。'}</div>`;return}
   $('#shotList').innerHTML=visible.map(s=>{
     const i=p.shots.indexOf(s),missing=s.kind==='B'?!s.asset:!s.aroll_ready;
     let thumb=s.kind==='A'?(s.aroll_ready?`<video class="shot-thumb" src="${media(s.aroll_asset)}#t=0.1" muted preload="metadata" aria-label="MuseTalk 人物口型"></video>`:`<img class="shot-thumb" src="${host()}" alt="人物出镜">`):s.asset?(/\.(jpg|png|webp)$/i.test(s.asset)?`<img class="shot-thumb" src="${media(s.asset)}" alt="B-roll 图片">`:`<video class="shot-thumb" src="${media(s.asset)}#t=0.1" muted preload="metadata" aria-label="B-roll 素材"></video>`):`<div class="shot-thumb">素材待补</div>`;
@@ -133,7 +136,8 @@ function renderShotDetail(){
   const p=state.project,s=p.shots.find(s=>s.id===state.selected),root=$('#shotPanel');
   if(!s){root.innerHTML='<div class="panel-empty">选择一个分镜，<br>查看语义与素材详情。</div>';return}
   const i=p.shots.indexOf(s),video=s.asset&&/\.mp4$/i.test(s.asset),looped=s.source?.duration>0&&s.source.duration-(s.media_start||0)<s.end-s.start;
-  root.innerHTML=`<div class="eyebrow">SHOT ${String(i+1).padStart(2,'0')}</div><h3 class="detail-title">${esc(s.title)}</h3><div class="detail-info">${fmt(s.start)} — ${fmt(s.end)} · ${(s.end-s.start).toFixed(2)} 秒</div><div class="detail-switch"><button class="button ${s.kind==='A'?'active':''}" data-kind="A">A-roll 人物</button><button class="button ${s.kind==='B'?'active':''}" data-kind="B">B-roll 素材</button></div><div class="detail-text">${esc(s.text)}</div><label class="detail-field">镜头标题<input id="shotTitle" value="${esc(s.title)}"></label><label class="detail-field">剪辑理由<textarea id="shotReason">${esc(s.reason)}</textarea></label><label class="detail-field">与下一镜头的交界（秒）<input id="shotEnd" type="number" step="0.01" value="${s.end}" ${i===p.shots.length-1?'disabled':''}></label><p class="source-note">修改交界会同时调整相邻镜头，总时长保持不变。</p>${s.kind==='B'?`<div class="divider"></div><label class="detail-field">素材检索词（每行一个）<textarea id="shotKeywords">${esc(s.keywords.join('\n'))}</textarea></label><p class="help">描述能看见的具体画面，例如 “old library books”。修改后可重新搜索候选。</p><button id="searchShot" class="button wide">搜索候选素材</button><label class="button wide">导入本地视频 / 图片<input id="localBroll" type="file" accept="video/*,image/png,image/jpeg,image/webp" hidden></label>${video?`<label class="detail-field">素材入点（秒）<input id="mediaStart" type="number" step="0.1" min="0" value="${s.media_start||0}"></label>`:''}${!s.asset?`<p class="export-warning help">尚未匹配素材，预览与导出暂用人物图。${esc(s.material_error||'')}</p>`:''}${looped?'<p class="help export-warning">此素材短于镜头时长，成片会循环使用该片段。</p>':''}${s.source?`<p class="source-note">当前素材：${esc(s.source.provider)} · ${esc(s.source.author||s.source.name||'')} ${safeURL(s.source.page)?`<a class="source-link" href="${esc(s.source.page)}" target="_blank" rel="noreferrer">来源 ↗</a>`:''}</p>`:''}<div id="candidates">${s.candidates.slice().sort((a,b)=>Number(b.id===s.source?.id)-Number(a.id===s.source?.id)).slice(0,3).map(c=>`<div class="candidate">${safeURL(c.thumbnail)?`<img src="${esc(c.thumbnail)}" alt="${esc(c.query)}" loading="lazy" referrerpolicy="no-referrer">`:''}<div class="candidate-info"><small>${esc(c.provider)} · ${c.duration} 秒 · ${c.width}×${c.height}</small><small>${esc(c.author)} / ${esc(c.query)}</small><a href="${esc(safeURL(c.page))}" class="source-link" target="_blank" rel="noreferrer">查看素材来源 ↗</a><button class="button" data-candidate="${esc(c.id)}">${s.source?.id===c.id?'✓ 当前使用':'选用这个素材'}</button></div></div>`).join('')}</div>`:`<div class="divider"></div><p class="help">MuseTalk 1.5 · ${s.aroll_ready?'口型已生成，预览和导出使用这段视频。':(hostIsVideo()?'口型尚未生成或输入已变化，当前预览为原循环视频。导出前会自动生成口型。':'口型尚未生成或输入已变化，当前预览暂用人物图。导出前会自动生成。')}</p>${s.aroll_error?`<p class="help export-warning">${esc(s.aroll_error)}</p>`:''}<button id="generateShotAroll" class="button wide">${s.aroll_ready?'重新生成这一镜口型':'生成这一镜口型'}</button><p class="help">只使用 ${fmt(s.start)}–${fmt(s.end)} 的对应原音频。已生成的历史视频会保留。</p>`}`;
+  const framing=[cameraLabel(s.camera),changeLabel(s.visual_change)].filter(Boolean).join(' · '),cut=s.cut_reason?`· 切点：${esc(s.cut_reason)}${Number.isFinite(s.cut_score)?` (${s.cut_score})`:''}`:'';
+  root.innerHTML=`<div class="eyebrow">VISUAL SHOT ${String(i+1).padStart(2,'0')}</div><h3 class="detail-title">${esc(s.title)}</h3><div class="detail-info">${fmt(s.start)} — ${fmt(s.end)} · ${(s.end-s.start).toFixed(2)} 秒${framing?' · '+esc(framing):''}</div><p class="source-note">语义：${esc(s.semantic_type||'—')} · B-roll 分数：${Number.isFinite(s.broll_score)?s.broll_score:'—'} · 可视化对象：${esc(s.visual_subject||'无')} ${cut}</p>${s.editorial_review?`<p class="help export-warning">${esc(s.editorial_review)}</p>`:''}<div class="detail-switch"><button class="button ${s.kind==='A'?'active':''}" data-kind="A">A-roll 人物</button><button class="button ${s.kind==='B'?'active':''}" data-kind="B">B-roll 素材</button></div><div class="detail-text">${esc(s.text)}</div><label class="detail-field">镜头标题<input id="shotTitle" value="${esc(s.title)}"></label><label class="detail-field">程序决策说明<textarea id="shotReason">${esc(s.reason)}</textarea></label><label class="detail-field">与下一镜头的交界（秒）<input id="shotEnd" type="number" step="0.01" value="${s.end}" ${i===p.shots.length-1?'disabled':''}></label><p class="source-note">修改交界会同时调整相邻镜头，总时长保持不变。</p>${s.kind==='B'?`<div class="divider"></div><label class="detail-field">素材检索词（每行一个）<textarea id="shotKeywords">${esc(s.keywords.join('\n'))}</textarea></label><p class="help">描述能看见的具体画面，例如 “old library books”。修改后可重新搜索候选。</p><button id="searchShot" class="button wide">搜索候选素材</button><label class="button wide">导入本地视频 / 图片<input id="localBroll" type="file" accept="video/*,image/png,image/jpeg,image/webp" hidden></label>${video?`<label class="detail-field">素材入点（秒）<input id="mediaStart" type="number" step="0.1" min="0" value="${s.media_start||0}"></label>`:''}${!s.asset?`<p class="export-warning help">尚未匹配素材，预览与导出暂用人物图。${esc(s.material_error||'')}</p>`:''}${looped?'<p class="help export-warning">此素材短于镜头时长，成片会循环使用该片段。</p>':''}${s.source?`<p class="source-note">当前素材：${esc(s.source.provider)} · ${esc(s.source.author||s.source.name||'')} ${safeURL(s.source.page)?`<a class="source-link" href="${esc(s.source.page)}" target="_blank" rel="noreferrer">来源 ↗</a>`:''}</p>`:''}<div id="candidates">${s.candidates.slice().sort((a,b)=>Number(b.id===s.source?.id)-Number(a.id===s.source?.id)).slice(0,3).map(c=>`<div class="candidate">${safeURL(c.thumbnail)?`<img src="${esc(c.thumbnail)}" alt="${esc(c.query)}" loading="lazy" referrerpolicy="no-referrer">`:''}<div class="candidate-info"><small>${esc(c.provider)} · ${c.duration} 秒 · ${c.width}×${c.height}</small><small>${esc(c.author)} / ${esc(c.query)}</small><a href="${esc(safeURL(c.page))}" class="source-link" target="_blank" rel="noreferrer">查看素材来源 ↗</a><button class="button" data-candidate="${esc(c.id)}">${s.source?.id===c.id?'✓ 当前使用':'选用这个素材'}</button></div></div>`).join('')}</div>`:`<div class="divider"></div><p class="help">MuseTalk 1.5 · ${s.aroll_ready?'口型已生成，预览和导出使用这段视频。':(hostIsVideo()?'口型尚未生成或输入已变化，当前预览为原循环视频。导出前会自动生成口型。':'口型尚未生成或输入已变化，当前预览暂用人物图。导出前会自动生成。')}</p>${s.aroll_error?`<p class="help export-warning">${esc(s.aroll_error)}</p>`:''}<button id="generateShotAroll" class="button wide">${s.aroll_ready?'重新生成这一镜口型':'生成这一镜口型'}</button><p class="help">只使用 ${fmt(s.start)}–${fmt(s.end)} 的对应原音频。已生成的历史视频会保留。</p>`}`;
   $$('[data-kind]').forEach(b=>b.onclick=()=>patchShot({kind:b.dataset.kind}));
   $('#shotTitle').onchange=e=>patchShot({title:e.target.value});$('#shotReason').onchange=e=>patchShot({reason:e.target.value});$('#shotEnd').onchange=e=>patchShot({end:Number(e.target.value)});
   if(s.kind==='B'){
@@ -143,7 +147,8 @@ function renderShotDetail(){
     if($('#mediaStart'))$('#mediaStart').onchange=e=>patchShot({media_start:Number(e.target.value)});
     $$('[data-candidate]').forEach(b=>b.onclick=()=>guarded(()=>doRequest(`/shots/${s.id}/select`,{candidate_id:b.dataset.candidate})));
   }
-  if($('#generateShotAroll')){$('#generateShotAroll').onclick=()=>startJob('aroll',s.id);$('#generateShotAroll').disabled=!state.arollSupported;}
+  if($('#generateShotAroll')){$('#generateShotAroll').onclick=()=>startJob('aroll',s.id);$('#generateShotAroll').disabled=!state.arollSupported;
+    if(s.kind==='A'&&((i>0&&p.shots[i-1].kind==='A')||(i+1<p.shots.length&&p.shots[i+1].kind==='A')))$('#generateShotAroll').nextElementSibling.textContent='为避免切景别时闪帧，会同步重生这一段连续 A-roll；各镜头仍只使用对应原音频。历史视频会保留。';}
   if(state.busy)$$('#shotPanel button,#shotPanel input,#shotPanel textarea').forEach(e=>e.disabled=true);
 }
 async function patchShot(body){
@@ -164,20 +169,28 @@ function syncPreview(force=false){
   const p=state.project;if(!p)return;const audio=$('#audioPlayer'),video=$('#brollPreview'),t=audio.currentTime||0;
   $('#currentTime').textContent=fmt(t);$('#scrubber').value=t;$('#playButton').textContent=audio.paused?'▶':'Ⅱ';
   const shot=p.shots.find(s=>t>=s.start&&t<s.end)||p.shots.at(-1),hasB=shot?.kind==='B'&&shot.asset,hasA=shot?.kind==='A'&&shot.aroll_ready,sourceVideo=!hasA&&!hasB&&shot?.kind!=='B'&&hostIsVideo(),visual=hasA?shot.aroll_asset:hasB?shot.asset:sourceVideo?p.host_media_asset:null;
-  const isVideo=visual&&/\.(mp4|webm|mov|mkv|m4v)$/i.test(visual),key=visual?(shot?.id||'source')+'|'+visual+'|'+(shot?.media_start||0):'host|'+host();
+  const isVideo=visual&&/\.(mp4|webm|mov|mkv|m4v)$/i.test(visual),key=visual?(hasA?'aroll|'+visual:(shot?.id||'source')+'|'+visual+'|'+(shot?.media_start||0)):'host|'+host();
   $('#currentKind').textContent=shot?.kind==='B'?(hasB?'B-ROLL':'B-ROLL · 人物图代替'):(hasA?'A-ROLL · MuseTalk':sourceVideo?'A-ROLL · 原循环视频 · 待生成口型':'A-ROLL · 待生成口型');
+  const baseScale=shot?.kind==='A'?(shot.camera==='close'?1.40:shot.camera==='medium_close'?1.22:1):1,progress=shot?Math.max(0,Math.min(1,(t-shot.start)/Math.max(.001,shot.end-shot.start))):0;
+  const motionScale=shot?.motion==='push_in'?1+.08*progress:shot?.motion==='pull_out'?1.08-.08*progress:1,scale=baseScale*motionScale;
+  video.style.transform=`scale(${scale})`;$('#hostPreview').style.transform=`scale(${scale})`;
   if(state.previewKey!==key){
     state.previewKey=key;video.pause();video.classList.toggle('hidden',!isVideo);$('#hostPreview').classList.toggle('hidden',!!isVideo);
     if(isVideo){video.src=media(visual);video.load();video.onloadedmetadata=()=>syncPreview(true);video.onerror=()=>toast('该素材暂时无法预览，请换一个候选或导入其他素材')}
     else{$('#hostPreview').src=visual?media(visual):host();video.removeAttribute('src');video.load()}
   }
   if(isVideo&&video.readyState>=1&&Number.isFinite(video.duration)){
-    const offset=hasA||sourceVideo?0:shot.media_start||0,elapsed=sourceVideo?t:Math.max(0,t-shot.start),duration=video.duration;
-    const desired=hasA?Math.min(elapsed,Math.max(0,duration-.025)):(offset+elapsed)%duration;
+    const offset=hasA?(shot.aroll_media_start||0):sourceVideo?0:shot.media_start||0,elapsed=sourceVideo?t:Math.max(0,t-shot.start),duration=video.duration;
+    const desired=hasA?Math.min(offset+elapsed,Math.max(0,duration-.025)):(offset+elapsed)%duration;
     if(force||Math.abs(video.currentTime-desired)>.25)video.currentTime=desired;
     video.loop=!hasA;if(!audio.paused&&video.paused)video.play().catch(()=>{});if(audio.paused&&!video.paused)video.pause();
   }
   const caption=p.options.subtitles?(p.captions||[]).find(s=>t>=s.start&&t<s.end):null;$('#previewCaption').textContent=caption?.text||'';
+}
+function startPreviewAnimation(){
+  if(previewAnimation)return;
+  const tick=()=>{syncPreview();if($('#audioPlayer').paused){previewAnimation=0;return}previewAnimation=requestAnimationFrame(tick)};
+  previewAnimation=requestAnimationFrame(tick);
 }
 async function doRequest(suffix,body){
   await state.saving;
@@ -239,7 +252,7 @@ $('#useHostMaterial').onclick=()=>guarded(async()=>{
 api('/host-materials').then(items=>{$('#hostMaterial').innerHTML='<option value="">选择人物图片或循环视频…</option>'+items.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('')}).catch(()=>{});
 const drop=$('#audioDrop');drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragover')};drop.ondragleave=()=>drop.classList.remove('dragover');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragover');if(!state.busy)uploadFile('audio',e.dataTransfer.files[0])};
 $('#ratio').oninput=e=>$('#ratioValue').textContent=e.target.value+'%';$('#ratio').onchange=e=>patchOptions({broll_ratio:Number(e.target.value)});
-$('#shotLength').onchange=e=>patchOptions({max_shot:Number(e.target.value)});$('#materialSource').onchange=e=>patchOptions({source:e.target.value});$('#resolution').onchange=e=>patchOptions({resolution:e.target.value});$('#subtitlesToggle').onchange=e=>patchOptions({subtitles:e.target.checked});
+$('#materialSource').onchange=e=>patchOptions({source:e.target.value});$('#resolution').onchange=e=>patchOptions({resolution:e.target.value});$('#subtitlesToggle').onchange=e=>patchOptions({subtitles:e.target.checked});
 $('#transcribeButton').onclick=()=>startJob('transcribe');$('#planButton').onclick=()=>startJob('plan');$('#materialsButton').onclick=()=>startJob('materials');$('#arollButton').onclick=()=>startJob('aroll');$('#autoButton').onclick=()=>startJob('all');$('#exportButton').onclick=()=>startJob('render');
 $('#cancelJob').onclick=()=>guarded(async()=>{const r=await api('/projects/'+pid()+'/cancel',{method:'POST',body:'{}'});toast(r.message)});
 $('#resumeJob').onclick=()=>{const j=state.project.job;startJob(['all','tts','setup_models','transcribe','plan','materials','aroll','render'].includes(j?.action)?j.action:'all',j?.shot_id||null)};
@@ -248,7 +261,7 @@ $$('[data-panel]').forEach(b=>b.onclick=()=>setPanel(b.dataset.panel));
 $('#playButton').onclick=()=>guarded(async()=>{const a=$('#audioPlayer');if(a.paused)await a.play();else a.pause();syncPreview()});
 $('#muteButton').onclick=()=>{const a=$('#audioPlayer');a.muted=!a.muted;$('#muteButton').textContent=a.muted?'×':'♪'};
 $('#scrubber').oninput=e=>seek(Number(e.target.value));
-['timeupdate','play','pause','ended','seeked'].forEach(event=>$('#audioPlayer').addEventListener(event,()=>syncPreview(event==='seeked')));
+['timeupdate','play','pause','ended','seeked'].forEach(event=>$('#audioPlayer').addEventListener(event,()=>{syncPreview(event==='seeked');if(event==='play')startPreviewAnimation()}));
 $('#settingsButton').onclick=()=>guarded(async()=>{
   const s=await api('/settings'),form=$('#settingsForm');
   for(const k of ['llm_base_url','llm_model','asr_model','asr_device','aroll_batch_size'])form.elements[k].value=s[k];

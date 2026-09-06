@@ -40,7 +40,7 @@ def get_settings(): return c.settings()
 @app.get('/api/health')
 def health():
     return {'status':'ok','revision':LOADED_REVISION,'update_required':LOADED_REVISION!=c.code_revision(),
-            'features':{'reliable_planning':True,'musetalk':True,'direct_musetalk':True,'deepseek_api':True,'text_to_video':True}}
+            'features':{'reliable_planning':True,'semantic_rule_planning':True,'musetalk':True,'direct_musetalk':True,'deepseek_api':True,'text_to_video':True}}
 
 @app.get('/api/local-models')
 def local_models():
@@ -122,7 +122,7 @@ def upload(pid:str,kind:str=Form(...),file:UploadFile=File(...),shot_id:str=Form
                 audio=target.with_suffix('.master.wav')
                 c.run([c.FFMPEG,'-y','-v','error','-i',target,'-vn','-ac','2','-ar','48000','-c:a','pcm_s16le',audio],timeout=1800)
                 p.update(audio=str(audio.relative_to(folder)).replace('\\','/'),audio_name=file.filename,
-                         duration=round(c.probe(audio)['duration'],3),segments=[],shots=[],analysis=None,waveform=c.waveform(audio))
+                         duration=round(c.probe(audio)['duration'],3),segments=[],candidate_segments=[],narrative_segments=[],shots=[],analysis=None,waveform=c.waveform(audio))
                 p.pop('script',None);p.pop('tts',None)
             elif kind in ('portrait','broll'):
                 is_image=ext in ('.png','.jpg','.jpeg','.webp')
@@ -156,7 +156,7 @@ def upload(pid:str,kind:str=Form(...),file:UploadFile=File(...),shot_id:str=Form
                 raw=target.read_bytes()
                 try: text=raw.decode('utf-8-sig')
                 except UnicodeDecodeError: text=raw.decode('gb18030')
-                p['segments']=c.parse_srt(text,p['duration']); p['shots']=[]; p['analysis']=None; p['transcription']={'engine':'导入 SRT'}
+                p['segments']=c.parse_srt(text,p['duration']);p['candidate_segments']=copy.deepcopy(p['segments']);p['narrative_segments']=[];p['shots']=[];p['analysis']=None;p['transcription']={'engine':'导入 SRT','phrase_timing':'srt-cue-v1'}
             p['revision']+=1
             # Preserve operation's current job state.
             p['job']=c.read_project(pid)['job']; c.save_project(p)

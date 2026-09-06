@@ -148,9 +148,9 @@ def synthesize(pid):
             p.setdefault('audio_history',[]).append({k:p.get(k) for k in ('audio','audio_name','tts','duration')})
         label=AZURE_VOICES[script['language']][script['speaker']] if provider==AZURE_PROVIDER else SPEAKERS[script['speaker']]
         p.update(script=script,audio=master.relative_to(c.project_dir(pid)).as_posix(),audio_name=f'文字配音 · {label}.wav',
-                 duration=duration,segments=segments,shots=[],analysis=None,waveform=waveform,
+                 duration=duration,segments=segments,candidate_segments=[],narrative_segments=[],shots=[],analysis=None,waveform=waveform,
                  tts={**result,'signature':key,'text':script['text']},
-                 transcription={'engine':result['engine'],'phrase_timing':'synthesized-phrase-v1','language':script['language']})
+                 transcription={'engine':result['engine'],'phrase_timing':'awaiting-script-alignment','language':script['language']})
         p['revision']+=1;c.save_project(p)
 
 def install(pid):

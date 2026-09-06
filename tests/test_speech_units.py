@@ -1,5 +1,5 @@
 import unittest
-from speech_units import phrase_segments
+from speech_units import align_script_to_words, phrase_segments, punctuation_parts
 
 
 class SpeechUnitTests(unittest.TestCase):
@@ -23,3 +23,15 @@ class SpeechUnitTests(unittest.TestCase):
     def test_missing_word_alignment_keeps_original_segment(self):
         s={'start':1,'end':4,'text':'原始字幕'}
         self.assertEqual(phrase_segments(s),[s])
+
+    def test_script_punctuation_uses_observed_word_boundaries(self):
+        text='他十九岁来到北京，其实当时没多少钱，但这个决定改变了他的一生。'
+        words=[
+            {'start':0.1,'end':2.8,'word':'他十九岁来到北京'},
+            {'start':3.0,'end':5.4,'word':'其实当时没多少钱'},
+            {'start':5.7,'end':10.2,'word':'但这个决定改变了他的一生'},
+        ]
+        result=align_script_to_words(text,words,0,10.4)
+        self.assertEqual([s['text'] for s in result],punctuation_parts(text))
+        self.assertEqual([s['end'] for s in result],[2.8,5.4,10.4])
+        self.assertEqual(''.join(s['text'] for s in result),text)
