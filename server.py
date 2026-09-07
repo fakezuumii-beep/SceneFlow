@@ -42,6 +42,12 @@ def health():
     return {'status':'ok','revision':LOADED_REVISION,'update_required':LOADED_REVISION!=c.code_revision(),
             'features':{'reliable_planning':True,'semantic_rule_planning':True,'musetalk':True,'direct_musetalk':True,'deepseek_api':True,'text_to_video':True}}
 
+# Stable, short health URL used by the Windows launcher and smoke tests.  Keep
+# the API form above for backwards compatibility with existing clients.
+@app.get('/health')
+def short_health():
+    return health()
+
 @app.get('/api/local-models')
 def local_models():
     import local_engines

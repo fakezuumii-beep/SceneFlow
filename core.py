@@ -47,7 +47,10 @@ def settings(private=False):
     public = {k:v for k,v in s.items() if not k.endswith('api_key')}
     public.update({k+'_configured': bool(v) for k,v in s.items() if k.endswith('api_key')})
     public['origin'] = '工作台私有设置'
-    public['ffmpeg_ready'] = bool(shutil.which('ffmpeg'))
+    # Prefer the application-owned binary in a Portable build.  The launcher
+    # also prepends it to PATH, but checking the resolved command keeps the
+    # settings panel truthful when the server is started directly.
+    public['ffmpeg_ready'] = Path(FFMPEG).is_file()
     public['cached_models'] = cached_models()
     return public
 

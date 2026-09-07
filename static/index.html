@@ -57,7 +57,7 @@
         <p class="help">选择音频转成字幕时使用的模型，日常默认 base；切换模型不会自动重做已经完成的字幕。</p>
         <div class="divider"></div>
         <div class="field-heading"><span class="step-circle">1</span><h3>A-roll 口型生成</h3><span class="subtle-tag">MuseTalk 1.5</span></div>
-        <p class="help" id="arollSummary">按 A-roll 的原音频生成口型，保持原镜头时间。</p><button class="button wide" id="arollButton">生成 A-roll 口型</button><p class="help">视频会按原顺序循环，保留已有眨眼、头部和身体动作，原声静音。口型由播客音频驱动；请选择首尾衔接自然的单人视频。一键生成和导出会自动补齐口型。</p>
+        <p class="help" id="arollSummary">A-roll 口型组件尚未安装时，核心工作台仍可正常启动。首次使用相关功能时再下载 MuseTalk。</p><button class="button wide" id="arollButton">[安装 / 校验 A-roll 组件]</button><p class="help">视频会按原顺序循环，保留已有眨眼、头部和身体动作，原声静音。口型由播客音频驱动；请选择首尾衔接自然的单人视频。一键生成和导出会自动补齐口型。</p>
         <div class="divider"></div><div class="field-heading"><span class="step-circle">2</span><h3>镜头编排</h3></div>
         <label class="field-label">B-roll 画面占比 <strong id="ratioValue">60%</strong></label><input id="ratio" type="range" min="0" max="80" step="5" value="60"><div class="range-ends"><span>多一些人物叙述</span><span>多一些场景画面</span></div>
         <p class="help">LLM 只判断语义。程序分别计算视觉价值与人物价值，再把可选段放进全片候选池统一分配，尽量接近 A/B 比例目标；短句合并按实际时长加权并保留子语义。</p>

@@ -1,6 +1,11 @@
-param([switch]$CpuOnly, [switch]$SkipModels)
+param([switch]$CpuOnly, [switch]$SkipModels, [switch]$Portable)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
+
+$portableMode = $Portable -or $env:SOLO_PORTABLE -eq '1'
+if ($portableMode -and -not [Environment]::Is64BitOperatingSystem) {
+    throw 'SOLO Portable 仅支持 Windows 10/11 x64。'
+}
 
 $runtime = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 $toolRoot = Join-Path $PSScriptRoot '.runtime'
@@ -21,6 +26,7 @@ function Download-File([string]$Url, [string]$Target) {
 
 function Ensure-Uv {
     if (Test-Path -LiteralPath $uvPath) { return $uvPath }
+    if ($portableMode) { throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 uv。' }
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
 
@@ -56,6 +62,8 @@ function Ensure-Python {
     if (Test-Path -LiteralPath $bundledPython) {
         Write-Host '正在使用随包附带的 Python 3.12.10 创建项目独立环境…'
         & $uv venv .venv --python $bundledPython
+    } elseif ($portableMode) {
+        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 Python Runtime。'
     } else {
         Write-Host '正在自动下载 Python 3.12.10 并创建项目独立环境…'
         & $uv venv .venv --python 3.12.10
@@ -66,11 +74,15 @@ function Ensure-Python {
 }
 
 function Ensure-FFmpeg {
+    $localFfmpeg = Join-Path $ffmpegBin 'ffmpeg.exe'
+    $localFfprobe = Join-Path $ffmpegBin 'ffprobe.exe'
+    if ($portableMode) {
+        if ((Test-Path -LiteralPath $localFfmpeg) -and (Test-Path -LiteralPath $localFfprobe)) { return }
+        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 FFmpeg。'
+    }
     $systemFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
     $systemFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
     if ($systemFfmpeg -and $systemFfprobe) { return }
-    $localFfmpeg = Join-Path $ffmpegBin 'ffmpeg.exe'
-    $localFfprobe = Join-Path $ffmpegBin 'ffprobe.exe'
     if ((Test-Path -LiteralPath $localFfmpeg) -and (Test-Path -LiteralPath $localFfprobe)) { return }
 
     Write-Host '未检测到 FFmpeg，正在自动安装项目独立版本…'
@@ -106,14 +118,24 @@ function Ensure-FFmpeg {
 Ensure-Python
 Ensure-FFmpeg
 
-& $runtime -m ensurepip --upgrade
+$uv = Ensure-Uv
+if ($portableMode -and -not (Test-Path -LiteralPath $mainWheelhouse)) {
+    throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少离线依赖。'
+}
 if (Test-Path -LiteralPath $mainWheelhouse) {
     Write-Host '正在从随包依赖安装工作台环境…'
-    & $runtime -m pip install --no-index --find-links $mainWheelhouse -r requirements.txt
+    & $uv pip install --python $runtime --no-index --find-links $mainWheelhouse -r requirements.txt
 } else {
-    & $runtime -m pip install -r requirements.txt
+    & $uv pip install --python $runtime -r requirements.txt
 }
 if ($LASTEXITCODE -ne 0) { throw '工作台依赖安装失败，重新运行可以继续。' }
+if ($portableMode) {
+    $packagedModel = Join-Path $PSScriptRoot 'engines\faster-whisper\base'
+    $requiredModelFiles = @('model.bin','config.json','tokenizer.json','vocabulary.txt')
+    if (-not (Test-Path -LiteralPath $packagedModel) -or ($requiredModelFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $packagedModel $_)) })) {
+        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 Whisper Base。'
+    }
+}
 if (-not $SkipModels) {
     $modelArgs = @('engine_setup.py')
     if ($CpuOnly) { $modelArgs += '--cpu' }
@@ -123,4 +145,4 @@ if (-not $SkipModels) {
 if (Test-Path -LiteralPath $uvPath) {
     & $uvPath cache clean | Out-Host
 }
-Write-Host '安装完成。Python 与 FFmpeg 均由工作台独立管理；填写 DeepSeek 与 Pexels API Key 后，双击「启动工作台.bat」开始创作。'
+Write-Host '安装完成。Python 与 FFmpeg 均由工作台独立管理；填写 DeepSeek 与 Pexels API Key 后，双击 SOLO.exe 开始创作。'

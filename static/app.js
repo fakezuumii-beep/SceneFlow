@@ -331,8 +331,8 @@ async function refreshLocalModels(){
   const m=await api('/local-models');
   state.ttsStatus=m;
   const azure=m.providers?.['azure-v1'];
-  $('#localModelStatus').textContent=`联网配音 Azure TTS V1：${azure?.ready?'已就绪':'组件待安装'}；口型 MuseTalk 1.5：${m.musetalk.installed?'已就绪':'待安装'}。`;
-  $('#installModels').textContent=m.musetalk.installed?'校验 / 修复 MuseTalk':'安装 MuseTalk';
+  $('#localModelStatus').textContent=`联网配音 Azure TTS V1：${azure?.ready?'已就绪':'组件待安装'}；A-roll 口型组件 MuseTalk 1.5：${m.musetalk.installed?'已就绪':'尚未安装（首次使用时下载）'}。`;
+  $('#installModels').textContent=m.musetalk.installed?'[安装 / 校验 A-roll 组件]':'[安装 / 校验 A-roll 组件]';
   updateTtsNotice();
 }
 refreshLocalModels().catch(()=>{});
