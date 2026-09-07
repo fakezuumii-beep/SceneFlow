@@ -16,15 +16,17 @@ for folder in (PROJECTS, PRIVATE):
 LOCK = threading.RLock()
 ACTIVE: dict[str, dict] = {}
 CANDIDATE_LIMIT = 3
-FFMPEG = shutil.which('ffmpeg') or 'ffmpeg'
-FFPROBE = shutil.which('ffprobe') or 'ffprobe'
+LOCAL_FFMPEG = ROOT/'.runtime'/'ffmpeg'/'bin'/'ffmpeg.exe'
+LOCAL_FFPROBE = ROOT/'.runtime'/'ffmpeg'/'bin'/'ffprobe.exe'
+FFMPEG = str(LOCAL_FFMPEG) if LOCAL_FFMPEG.is_file() else (shutil.which('ffmpeg') or 'ffmpeg')
+FFPROBE = str(LOCAL_FFPROBE) if LOCAL_FFPROBE.is_file() else (shutil.which('ffprobe') or 'ffprobe')
 # The personal loop is deliberately kept outside project folders.  A project gets
 # an immutable copy on first use, so changing the library file never invalidates
 # an in-progress episode.
 DEFAULT_LOOP_VIDEO = ROOT/'我的素材'/'循环视频.mp4'
 
 def code_revision():
-    files=('core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_worker.py','azure_tts_worker.py','engine_setup.py')
+    files=('core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py')
     return hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in files)).hexdigest()[:12]
 
 def _aroll_batch_size(s):

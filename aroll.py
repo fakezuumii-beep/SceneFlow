@@ -10,7 +10,7 @@ CONTEXT=.2
 ADAPTER_VERSION='musetalk15-direct-static-v2'
 VIDEO_ADAPTER_VERSION='musetalk15-direct-video-v4-shared-runs'
 
-def media_python():return ENGINES/'kokoro-tts-env'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+def media_python():return ENGINES/'media-env'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
 
 def batch_size():
     """Frames per inference batch: the only MuseTalk knob that trades VRAM for speed."""

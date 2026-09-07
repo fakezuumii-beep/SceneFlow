@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
 $sourceFiles = Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File | Where-Object {
-    $_.FullName -ne $PSCommandPath -and $_.FullName -notmatch '[\\/](data|engines|outputs|\.venv|\.git|\.pytest_cache|\.workbuddy|__pycache__)[\\/]'
+    $_.FullName -ne $PSCommandPath -and $_.FullName -notmatch '[\\/](data|engines|outputs|\.venv|\.runtime|\.git|\.pytest_cache|\.workbuddy|__pycache__)[\\/]'
 }
 $forbidden = @(
     'Qwen3-4B',
@@ -11,6 +11,8 @@ $forbidden = @(
     'MoneyPrinterTurbo',
     'ComfyUI_windows_portable',
     '127\.0\.0\.1:8189',
+    ('Ko' + 'koro'),
+    ('ko' + 'koro'),
     'sk-[A-Za-z0-9_-]{16,}',
     'AIza[0-9A-Za-z_-]{20,}'
 )
@@ -24,7 +26,7 @@ foreach ($file in $sourceFiles) {
 }
 if (Test-Path -LiteralPath '.git') {
     $tracked = & git ls-files
-    $badTracked = $tracked | Where-Object { $_ -match '^(data|engines|outputs|我的素材|\.venv)/' }
+    $badTracked = $tracked | Where-Object { $_ -match '^(data|engines|outputs|我的素材|\.venv|\.runtime)/' }
     if ($badTracked) { $problems += $badTracked | ForEach-Object { "Git must not track: $_" } }
 }
 if ($problems) {

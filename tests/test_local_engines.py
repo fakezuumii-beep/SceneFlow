@@ -1,34 +1,28 @@
-import copy, json, tempfile, unittest
+import copy, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
 from fastapi.testclient import TestClient
-import core, server, local_engines as le, tts_worker as tw, model_client, engine_setup
+import core, server, local_engines as le, tts_common as tc, model_client
 
 class LocalEngineTests(unittest.TestCase):
     def test_phrases_preserve_script_and_cache_changes_with_voice(self):
         for text in ['你好，今天我们读一本书。\n再谈谈生活！', 'A sentence. Another sentence, with a pause.', '很长的原稿'*55]:
-            parts=tw.split_script(text)
+            parts=tc.split_script(text)
             self.assertEqual(''.join(parts),text)
             self.assertTrue(all(len(x)<=80 for x in parts))
-        self.assertEqual(tw.split_script('你好，今天我们测试新的本地配音。'),['你好，今天我们测试新的本地配音。'])
-        self.assertNotEqual(tw.signature('原稿','zf_xiaoni','Chinese'),tw.signature('原稿','zm_yunxi','Chinese'))
-        self.assertNotEqual(tw.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1),tw.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1.1))
-        self.assertEqual(set(tw.SPEAKERS),set(engine_setup.KOKORO_VOICES))
-        self.assertNotIn('zf_xiaoyan',tw.SPEAKERS)
+        self.assertEqual(tc.split_script('你好，今天我们测试新的联网配音。'),['你好，今天我们测试新的联网配音。'])
+        self.assertNotEqual(tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese'),tc.signature('原稿','zh-CN-YunxiNeural','Chinese'))
+        self.assertNotEqual(tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1),tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1.1))
 
-    def test_azure_is_default_and_legacy_projects_stay_renderable(self):
+    def test_azure_is_the_only_provider(self):
         default=le.validate_script({'text':'默认配音'})
         self.assertEqual(default['provider'],'azure-v1')
         self.assertEqual(default['speaker'],'zh-CN-XiaoxiaoNeural')
         self.assertEqual(default['speed'],1.0)
-        old={'script':{'text':'旧原稿','speaker':'Uncle_Fu','language':'Chinese'},'audio':'old.wav',
-             'tts':{'text':'旧原稿','speaker':'Uncle_Fu','language':'Chinese','engine':'Qwen3-TTS'}}
-        self.assertFalse(le.needs_tts(old))
-        old['script']={**old['script'],'text':'新原稿'}
-        self.assertTrue(le.needs_tts(old))
-        self.assertEqual(le.validate_script({'text':'新原稿','speaker':'Uncle_Fu','language':'Chinese'})['speaker'],'zh-CN-YunyangNeural')
-        self.assertEqual(le.validate_script({'text':'English text','provider':'azure-v1','speaker':'zf_xiaoni','language':'English'})['speaker'],'en-US-AvaNeural')
-        self.assertEqual(le.validate_script({'text':'本地','provider':'kokoro','speaker':'Uncle_Fu','language':'Chinese'})['speaker'],'zm_yunyang')
+        self.assertEqual(le.validate_script({'text':'新原稿','speaker':'unknown','language':'Chinese'})['speaker'],'zh-CN-XiaoxiaoNeural')
+        self.assertEqual(le.validate_script({'text':'English text','provider':'azure-v1','speaker':'unknown','language':'English'})['speaker'],'en-US-AvaNeural')
+        with self.assertRaisesRegex(ValueError,'仅支持 Azure'):
+            le.validate_script({'text':'本地','provider':'local','language':'Chinese'})
 
     def test_draft_does_not_destroy_existing_work_and_blocks_stale_export(self):
         with tempfile.TemporaryDirectory() as root,patch.object(core,'PROJECTS',Path(root)),TestClient(server.app) as client:
@@ -44,24 +38,20 @@ class LocalEngineTests(unittest.TestCase):
 
     def test_new_text_job_and_resume_skip_successful_tts_and_asr(self):
         with tempfile.TemporaryDirectory() as root,patch.object(core,'PROJECTS',Path(root)):
-            p=core.create_project('text');pid=p['id'];p['script']={'text':'你好','speaker':'zf_xiaoni','language':'Chinese'};core.save_project(p)
+            p=core.create_project('text');pid=p['id'];p['script']={'text':'你好','provider':'azure-v1','speaker':'zh-CN-XiaoxiaoNeural','language':'Chinese','speed':1};core.save_project(p)
             with patch('core.threading.Thread'):
                 core.start_job(pid,'all')
             def synthesize(_):
-                q=core.read_project(pid);q.update(audio='done.wav',segments=[{'text':'你好'}],tts={'signature':tw.signature(**q['script'])});core.save_project(q)
+                q=core.read_project(pid);q.update(audio='done.wav',segments=[{'text':'你好'}],tts={'signature':tc.signature(**q['script'])});core.save_project(q)
             def plan(_):
                 q=core.read_project(pid);q['shots']=[{'kind':'A'}];core.save_project(q)
             with patch.object(le,'synthesize',side_effect=synthesize) as tts,patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=plan) as planner,patch.object(core,'materials'),patch('aroll.generate'),patch.object(core,'render'):
                 core.job_worker(pid,'all');core.ACTIVE[pid]={'cancel':False};core.job_worker(pid,'all')
                 self.assertEqual(tts.call_count,1);self.assertEqual(planner.call_count,1);self.assertEqual(asr.call_count,1)
 
-    def test_bad_voice_empty_text_and_model_truncation_rejected(self):
+    def test_bad_voice_and_empty_text_rejected(self):
         for value in ({'text':''},{'text':'x'*20001},{'text':'hi','provider':'evil'},{'text':'hi','speed':3}):
             with self.assertRaises(ValueError):le.validate_script(value)
-        with tempfile.TemporaryDirectory() as root:
-            folder=Path(root);(folder/'model').write_bytes(b'x')
-            (folder/'installed.json').write_text(json.dumps({'revision':'rev','files':[{'file':'model','size':2}]}))
-            self.assertFalse(le.model_ready(folder,'rev'))
 
     def test_deepseek_json_disables_thinking_and_preserves_config(self):
         cfg={'llm_base_url':'https://api.deepseek.com','llm_model':'deepseek-v4-flash','llm_api_key':'token'}

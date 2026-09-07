@@ -1,4 +1,4 @@
-"""Resumable installer for the workbench-owned TTS and MuseTalk runtimes."""
+"""Resumable installer for the workbench-owned MuseTalk runtime."""
 from __future__ import annotations
 import argparse, hashlib, json, os, shutil, subprocess, sys, time, zipfile
 from pathlib import Path
@@ -6,8 +6,6 @@ import requests
 
 ROOT = Path(__file__).resolve().parent
 ENGINES = ROOT / 'engines'
-KOKORO_REPO = 'hexgrad/Kokoro-82M'
-KOKORO_REV = 'f3ff3571791e39611d31c381e3a41a3af07b4987'
 MUSETALK_REPO = 'TMElyralab/MuseTalk'
 MUSETALK_REV = '0a89dec45a0192b824e3cf4daf96c239440c5ed8'
 MUSETALK_MODEL_REV = '3ef28bc5cff08c90ad8178a25f1b570cd800170f'
@@ -18,13 +16,6 @@ WHISPER_REV = '169d4a4341b33bc18d8881c4b69c2e104e1cc0af'
 OPENCV_ZOO_REV = '47534e27c9851bb1128ccc0102f1145e27f23f98'
 YUNET_SHA256 = '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4'
 YUNET_URL = f'https://raw.githubusercontent.com/opencv/opencv_zoo/{OPENCV_ZOO_REV}/models/face_detection_yunet/face_detection_yunet_2023mar.onnx'
-
-# Voices bundled in hexgrad/Kokoro-82M. Kept in sync with tts_worker.SPEAKERS so the
-# pre-download covers every option that the UI exposes. Add new voices in both
-# places; the installer will otherwise fail when the first choice misses a file.
-KOKORO_VOICES = ['zf_xiaobei','zf_xiaoni','zf_xiaoxiao','zf_xiaoyi',
-                 'zm_yunjian','zm_yunxi','zm_yunxia','zm_yunyang',
-                 'af_bella','af_nicole','am_michael','am_adam']
 
 def emit(message): print(message, flush=True)
 
@@ -84,6 +75,8 @@ def command(args):
 
 def uv_command():
     if shutil.which('uv'):return [shutil.which('uv')]
+    bundled=ROOT/'.runtime'/'uv'/'uv.exe'
+    if bundled.is_file():return [str(bundled)]
     try:__import__('uv')
     except ImportError:command([sys.executable,'-m','pip','install','uv==0.8.22'])
     return [sys.executable,'-m','uv']
@@ -110,7 +103,7 @@ def install_source():
     marker.write_text(json.dumps({'repo':'https://github.com/TMElyralab/MuseTalk','revision':MUSETALK_REV}))
 
 def setup_runtime(cpu=False):
-    uv=uv_command();env=ENGINES/'kokoro-tts-env';py=env/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+    uv=uv_command();env=ENGINES/'media-env';py=env/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
     if not py.exists():command(uv+['venv',str(env),'--python','3.12'])
     emit('安装独立媒体环境（首次需要下载 PyTorch）…')
     command(uv+['pip','install','--python',str(py),'torch==2.8.0','torchaudio==2.8.0','torchvision==0.23.0',
@@ -119,9 +112,6 @@ def setup_runtime(cpu=False):
     return env,py
 
 def setup_models():
-    emit(f'下载 Kokoro-82M 模型（{KOKORO_REV[:7]}…）与所选音色…')
-    only=['config.json','kokoro-v1_0.pth']+[f'voices/{v}.pt' for v in KOKORO_VOICES]
-    model(KOKORO_REPO,KOKORO_REV,ENGINES/'kokoro-82m',only)
     source=ENGINES/'MuseTalk';models=source/'models'
     model(MUSETALK_REPO,MUSETALK_MODEL_REV,models,['musetalkV15/unet.pth','musetalkV15/musetalk.json'])
     model(VAE_REPO,VAE_REV,models/'sd-vae',['config.json','diffusion_pytorch_model.bin'])
@@ -132,15 +122,21 @@ def ready_manifest(env,device):
     files=[]
     for path in (ENGINES/'MuseTalk'/'models').rglob('*'):
         if path.is_file() and path.name!='installed.json':files.append({'file':path.relative_to(ENGINES/'MuseTalk').as_posix(),'size':path.stat().st_size})
-    (env/'ready.json').write_text(json.dumps({'torch':'2.8.0','kokoro':KOKORO_REV,
+    (env/'ready.json').write_text(json.dumps({'torch':'2.8.0',
                                               'musetalk_revision':MUSETALK_REV,
-                                              'voices':KOKORO_VOICES,
                                               'device':device,'files':files},indent=2),encoding='utf-8')
+
+def remove_legacy_speech_runtime():
+    """Remove the retired local speech model only after MuseTalk is healthy."""
+    for name in ('ko'+'koro-82m','ko'+'koro-tts-env'):
+        target=ENGINES/name
+        if target.is_dir():shutil.rmtree(target)
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--cpu',action='store_true');args=parser.parse_args()
     if not shutil.which('nvidia-smi'):args.cpu=True
     install_source();env,py=setup_runtime(args.cpu);setup_models()
-    command([py,'-c','import torch,cv2,diffusers,librosa; from kokoro import KPipeline; print("media runtime OK",torch.__version__)'])
+    command([py,'-c','import torch,cv2,diffusers,librosa; print("media runtime OK",torch.__version__)'])
     ready_manifest(env,'cpu' if args.cpu else 'cuda')
-    emit('本地配音与 MuseTalk 安装和校验完成，可以开始创作。')
+    remove_legacy_speech_runtime()
+    emit('独立 MuseTalk 安装和校验完成，可以开始创作。')

@@ -2,14 +2,14 @@ data/
 .venv/
 __pycache__/
 .pytest_cache/
+.runtime/
 *.py[cod]
 *.log
 tests/fixtures/
 engines/MuseTalk/
 engines/smoke*
 engines/source-install-smoke/
-engines/kokoro-tts-env/
-engines/kokoro-82m/
+engines/media-env/
 engines/.hf-hub/
 engines/downloads/
 outputs/

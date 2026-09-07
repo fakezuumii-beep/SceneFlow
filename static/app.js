@@ -6,15 +6,7 @@ const voiceCatalog={
   'azure-v1':{
     Chinese:[['zh-CN-XiaoxiaoNeural','中文女声 · 晓晓（默认）'],['zh-CN-XiaoyiNeural','中文女声 · 晓伊'],['zh-CN-liaoning-XiaobeiNeural','中文女声 · 晓北（辽宁）'],['zh-CN-shaanxi-XiaoniNeural','中文女声 · 晓妮（陕西）'],['zh-CN-XiaoxiaoMultilingualNeural-V2','中文女声 · 晓晓多语种 V2'],['zh-CN-YunjianNeural','中文男声 · 云健'],['zh-CN-YunxiNeural','中文男声 · 云希'],['zh-CN-YunxiaNeural','中文男声 · 云夏'],['zh-CN-YunyangNeural','中文男声 · 云扬']],
     English:[['en-US-AvaNeural','英文女声 · Ava'],['en-US-EmmaNeural','英文女声 · Emma'],['en-US-JennyNeural','英文女声 · Jenny'],['en-US-AndrewNeural','英文男声 · Andrew'],['en-US-BrianNeural','英文男声 · Brian'],['en-US-GuyNeural','英文男声 · Guy']]
-  },
-  kokoro:{
-    Chinese:[['zf_xiaoni','中文女声 · Xiaoni'],['zf_xiaobei','中文女声 · Xiaobei'],['zf_xiaoxiao','中文女声 · Xiaoxiao'],['zf_xiaoyi','中文女声 · Xiaoyi'],['zm_yunjian','中文男声 · Yunjian'],['zm_yunxi','中文男声 · Yunxi'],['zm_yunxia','中文男声 · Yunxia'],['zm_yunyang','中文男声 · Yunyang']],
-    English:[['af_bella','英文女声 · Bella'],['af_nicole','英文女声 · Nicole'],['am_michael','英文男声 · Michael'],['am_adam','英文男声 · Adam']]
   }
-};
-const legacyVoice={
-  'azure-v1':{Serena:'zh-CN-XiaoxiaoNeural',Vivian:'zh-CN-XiaoyiNeural',Uncle_Fu:'zh-CN-YunyangNeural',Dylan:'zh-CN-YunjianNeural',Eric:'zh-CN-YunxiNeural',Ryan:'en-US-GuyNeural',Aiden:'en-US-AndrewNeural',zf_xiaoni:'zh-CN-XiaoxiaoNeural',zf_xiaobei:'zh-CN-liaoning-XiaobeiNeural',zf_xiaoxiao:'zh-CN-XiaoxiaoNeural',zf_xiaoyi:'zh-CN-XiaoyiNeural',zm_yunjian:'zh-CN-YunjianNeural',zm_yunxi:'zh-CN-YunxiNeural',zm_yunxia:'zh-CN-YunxiaNeural',zm_yunyang:'zh-CN-YunyangNeural',af_bella:'en-US-AvaNeural',af_nicole:'en-US-EmmaNeural',am_michael:'en-US-GuyNeural',am_adam:'en-US-AndrewNeural'},
-  kokoro:{Serena:'zf_xiaoni',Vivian:'zf_xiaoyi',Uncle_Fu:'zm_yunyang',Dylan:'zm_yunjian',Eric:'zm_yunxi',Ryan:'am_michael',Aiden:'am_adam'}
 };
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=s=>{s=Math.max(0,Number(s)||0);return (s>=3600?Math.floor(s/3600)+':':'')+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(Math.floor(s)%60).padStart(2,'0')};
@@ -34,16 +26,15 @@ async function api(path,options={}){
 }
 async function guarded(fn){try{return await fn()}catch(e){toast(e.message);return null}}
 function pid(){return state.project.id}
-function inferProvider(draft){return draft.provider||(voiceCatalog.kokoro.Chinese.concat(voiceCatalog.kokoro.English).some(v=>v[0]===draft.speaker)?'kokoro':'azure-v1')}
+function inferProvider(){return 'azure-v1'}
 function updateVoiceOptions(preferred){
   const provider=$('#ttsProvider').value,language=$('#ttsLanguage').value,options=voiceCatalog[provider]?.[language]||[];
-  const mapped=legacyVoice[provider]?.[preferred]||preferred;
   $('#ttsSpeaker').innerHTML=options.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join('');
-  $('#ttsSpeaker').value=options.some(v=>v[0]===mapped)?mapped:options[0]?.[0]||'';
+  $('#ttsSpeaker').value=options.some(v=>v[0]===preferred)?preferred:options[0]?.[0]||'';
 }
 function updateTtsNotice(){
-  const provider=$('#ttsProvider').value,info=state.ttsStatus?.providers?.[provider];
-  $('#ttsNotice').textContent=provider==='azure-v1'?(info?.ready===false?'Azure TTS V1 组件待安装，请重新运行「安装工作台.bat」。':'Azure TTS V1 · 默认联网配音，无需 Azure Key；生成后可直接下载，也可使用下方播放器试听。原稿会发送到微软语音服务。'):(info?.ready?'Kokoro-82M · 本地备用已就绪；生成后可直接下载，也可使用下方播放器试听。':'Kokoro-82M · 本地备用待安装，可在「连接与设置」安装。');
+  const info=state.ttsStatus?.providers?.['azure-v1'];
+  $('#ttsNotice').textContent=info?.ready===false?'Azure TTS V1 组件待安装，请重新运行「安装工作台.bat」。':'Azure TTS V1 · 联网配音，无需 Azure Key；生成后可直接下载，也可使用下方播放器试听。原稿会发送到微软语音服务。';
 }
 async function refreshProjects(){state.projects=await api('/projects');renderProjects()}
 function renderProjects(){
@@ -326,9 +317,9 @@ $('#installModels').onclick=()=>guarded(async()=>{$('#settingsDialog').close();a
 async function refreshLocalModels(){
   const m=await api('/local-models');
   state.ttsStatus=m;
-  const azure=m.providers?.['azure-v1'],kokoro=m.providers?.kokoro;
-  $('#localModelStatus').textContent=`默认配音 Azure TTS V1：${azure?.ready?'已就绪':'组件待安装'}；备用 Kokoro：${kokoro?.ready?'已就绪':'待安装'}；口型 MuseTalk 1.5：${m.musetalk.installed?'已就绪':'待安装'}。`;
-  $('#installModels').textContent=kokoro?.ready&&m.musetalk.installed?'校验 / 修复本地媒体引擎':'安装本地媒体引擎';
+  const azure=m.providers?.['azure-v1'];
+  $('#localModelStatus').textContent=`联网配音 Azure TTS V1：${azure?.ready?'已就绪':'组件待安装'}；口型 MuseTalk 1.5：${m.musetalk.installed?'已就绪':'待安装'}。`;
+  $('#installModels').textContent=m.musetalk.installed?'校验 / 修复 MuseTalk':'安装 MuseTalk';
   updateTtsNotice();
 }
 refreshLocalModels().catch(()=>{});

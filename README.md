@@ -7,13 +7,13 @@
 - DeepSeek API：只判断候选文字的语义类型、可视化对象、重要性与情绪。
 - Pexels API：搜索并下载可用的 B-roll 视频。
 
-文字配音默认使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。Kokoro-82M 保留为可选的本地备用；faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。语义分镜固定使用 DeepSeek API；工作台不会启动或访问外部工作流服务。
+文字配音使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。语义分镜固定使用 DeepSeek API；工作台不会启动或访问外部工作流服务。
 
 ## 能做什么
 
 **文字一键成片**
 
-1. 粘贴原稿，默认选择 Azure TTS V1 的中文音色与语速；也可切换本地 Kokoro。
+1. 粘贴原稿，选择 Azure TTS V1 的中文音色与语速。
 2. 生成连续配音，再用 faster-whisper 将原稿标点对齐到真实词时间；Azure 失败后重试时会复用已完成段落。
 3. DeepSeek 只做候选段语义分类，程序按配置计算视觉/人物双价值，并结合全片比例决定 A/B、叙事段合并和视觉镜头数量。
 4. 程序按真实时间优先在标点/词边界切镜头，Pexels 自动匹配 B-roll。
@@ -40,13 +40,12 @@
 
 ## Windows 安装
 
-推荐 NVIDIA 显卡，显存 8 GB 以上；MuseTalk 和备用 Kokoro 在 CPU 上可以启动，但不适合实际成片。Azure TTS V1 不占用显卡。当前自动安装器面向 Windows 10/11 x64。
+推荐 NVIDIA 显卡，显存 8 GB 以上；MuseTalk 在 CPU 上可以启动，但不适合实际成片。Azure TTS V1 不占用显卡。当前自动安装器面向 Windows 10/11 x64。
 
-1. 安装 [Python 3.12](https://www.python.org/downloads/) 并勾选 `Add Python to PATH`。
-2. 安装 FFmpeg，并确认 `ffmpeg` 与 `ffprobe` 在 PATH 中。
-3. 下载或克隆本仓库，双击 `安装工作台.bat`。安装器会安装 Azure TTS V1 客户端，并创建隔离媒体环境，从上游下载备用 Kokoro-82M、MuseTalk、VAE、Whisper 和人脸检测模型；中断后可再次运行续传。
-4. 双击 `启动工作台.bat`，浏览器打开 `http://127.0.0.1:8766`。
-5. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key，然后安装/校验本地媒体引擎。
+1. 下载或克隆本仓库并解压到普通文件夹。
+2. 双击 `安装工作台.bat`。安装器会自动下载项目独立的 Python 3.12.10 和 FFmpeg，不需要管理员权限，也不会修改系统 Python；随后安装 Azure TTS V1 客户端、MuseTalk、VAE、Whisper 和人脸检测模型。中断后可再次运行续传。
+3. 双击 `启动工作台.bat`，浏览器打开 `http://127.0.0.1:8766`。
+4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key，然后安装/校验 MuseTalk。
 
 首次转录所选 faster-whisper 模型时会自动下载模型。设置里的 `small` 更快，`large-v3` 更准确。
 
@@ -57,7 +56,7 @@ PowerShell 也可以直接运行：
 .\启动工作台.ps1
 ```
 
-只安装 Web 服务依赖、不下载生成模型：
+只安装独立 Python、FFmpeg 和 Web 服务依赖，不下载口型模型：
 
 ```powershell
 .\安装工作台.ps1 -SkipModels
@@ -80,7 +79,7 @@ Pexels 是默认素材源。Pixabay 保留为可选替代源；只配置 DeepSee
 
 Azure TTS V1 是新项目默认引擎，默认中文音色为 `zh-CN-XiaoxiaoNeural`。界面支持中文/英文音色与 0.85×–1.2× 常用语速。它按自然句子或较长文本连续请求，不会为了逗号分镜逐小句合成；每段最多重试三次，并只在音频可解码后写入缓存。完整音轨生成后才进行原稿/语音对齐和分镜。
 
-已有 Qwen3-TTS 或 Kokoro 项目不会因为升级自动重配音。只有用户修改原稿、引擎、音色、语言或语速后，工作台才会将配音标为需要重做。
+文字配音只提供 Azure TTS V1。修改原稿、音色、语言或语速后，工作台会将配音标为需要重做。
 
 ## 独立 MuseTalk 口型
 
@@ -103,13 +102,14 @@ storyboard.py             确定性的双价值、全片 A/B 分配、时长和�
 storyboard_rules.json     主链路实际读取的双价值、选择、时长与自然回场配置
 speech_units.py           标点候选切分与原稿/Whisper 词时间对齐
 static/                   本地 Web 界面
-local_engines.py          Azure/Kokoro 配音与媒体引擎生命周期
+local_engines.py          Azure 配音与媒体引擎生命周期
 azure_tts_worker.py       Azure TTS V1 分段请求、重试、缓存与 WAV 合并
 aroll.py                  独立 MuseTalk 调度、缓存与校验
 musetalk_worker.py        无 ComfyUI 的 MuseTalk 推理进程
 engine_setup.py           可续传的源码、运行时与权重安装器
 data/                     私有设置、项目、缓存、日志（不提交）
-engines/                  下载的环境、源码与权重（不提交）
+engines/                  下载的 MuseTalk 环境、源码与权重（不提交）
+.runtime/                 自动安装的 Python/FFmpeg 引导工具与 FFmpeg（不提交）
 ```
 
 提交公开仓库前运行：

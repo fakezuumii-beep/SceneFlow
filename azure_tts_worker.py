@@ -6,7 +6,7 @@ from pathlib import Path
 import edge_tts
 
 from atomic_files import atomic_json as write_json
-from tts_worker import split_script
+from tts_common import split_script
 from worker_progress import atomic_json as write_progress
 
 
