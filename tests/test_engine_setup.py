@@ -1,4 +1,3 @@
-import hashlib
 import json
 import tempfile
 import unittest
@@ -13,10 +12,9 @@ class EngineSetupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);target=root/'model.bin'
             target.write_bytes(b'packaged-model')
-            digest=hashlib.sha256(target.read_bytes()).hexdigest()
             (root/'installed.json').write_text(json.dumps({
                 'repo':'example/model','revision':'fixed',
-                'files':[{'file':'model.bin','size':target.stat().st_size,'sha256':digest}],
+                'files':[{'file':'model.bin'}],
             }),encoding='utf-8')
             with patch.object(engine_setup.requests,'get') as request:
                 engine_setup.model('example/model','fixed',root,['model.bin'])
