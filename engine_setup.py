@@ -74,17 +74,19 @@ def model(repo,rev,folder,only):
     try:
         installed=json.loads(manifest_path.read_text(encoding='utf-8'))
         records={str(item['file']).replace('\\','/').casefold():item for item in installed.get('files',[])}
-        if os.environ.get('SOLO_DEBUG_MODEL')=='1':
-            print('MODEL_DEBUG', installed.get('repo'), installed.get('revision'), repo, rev, records, wanted,
-                  [(name, str(model_path(name)), model_path(name).is_file(), model_path(name).stat().st_size if model_path(name).is_file() else None) for name in wanted], flush=True)
-        if installed.get('repo')==repo and installed.get('revision')==rev and all(
-            model_path(name).is_file() and name.casefold() in records and
-            (not records[name.casefold()].get('size') or model_path(name).stat().st_size==records[name.casefold()]['size']) and
-            (not records[name.casefold()].get('sha256') or digest(model_path(name))==records[name.casefold()]['sha256'])
-            for name in wanted
-        ):
-            emit(f'已校验本地模型：{repo}')
-            return
+        if installed.get('repo')==repo and installed.get('revision')==rev:
+            valid=True
+            for name in wanted:
+                target=model_path(name); record=records.get(name.casefold())
+                if not target.is_file() or record is None:
+                    valid=False; break
+                if record.get('size') and target.stat().st_size != record['size']:
+                    valid=False; break
+                if record.get('sha256') and digest(target) != record['sha256']:
+                    valid=False; break
+            if valid:
+                emit(f'已校验本地模型：{repo}')
+                return
     except (OSError,ValueError,KeyError,TypeError,json.JSONDecodeError):
         pass
     response=requests.get(f'https://huggingface.co/api/models/{repo}/revision/{rev}?blobs=true',timeout=30)
