@@ -55,27 +55,26 @@ def download(url,path,sha=None,size=None):
             time.sleep(2)
 
 def model(repo,rev,folder,only):
-    def model_path(name):
-        normalized=str(name).replace('\\','/')
-        return folder.joinpath(*normalized.split('/'))
-
-    wanted=set(str(name).replace('\\','/') for name in only)
     manifest_path=folder/'installed.json'
     try:
         installed=json.loads(manifest_path.read_text(encoding='utf-8'))
-        available={str(item['file']).replace('\\','/').casefold() for item in installed.get('files',[])}
-        if installed.get('repo')==repo and installed.get('revision')==rev:
-            if all(model_path(name).is_file() and name.casefold() in available for name in wanted):
-                emit(f'已校验本地模型：{repo}')
-                return
+        records={item['file']:item for item in installed.get('files',[])}
+        if installed.get('repo')==repo and installed.get('revision')==rev and all(
+            (folder/name).is_file() and name in records and
+            (not records[name].get('size') or (folder/name).stat().st_size==records[name]['size']) and
+            (not records[name].get('sha256') or digest(folder/name)==records[name]['sha256'])
+            for name in only
+        ):
+            emit(f'已校验本地模型：{repo}')
+            return
     except (OSError,ValueError,KeyError,TypeError,json.JSONDecodeError):
         pass
     response=requests.get(f'https://huggingface.co/api/models/{repo}/revision/{rev}?blobs=true',timeout=30)
     response.raise_for_status();info=response.json();manifest=[]
     for item in info['siblings']:
-        name=str(item['rfilename']).replace('\\','/')
+        name=item['rfilename']
         if name not in wanted:continue
-        target=model_path(name)
+        target=folder/name
         if not target.resolve().is_relative_to(folder.resolve()):raise ValueError('模型文件路径无效')
         sha=item.get('lfs',{}).get('sha256');size=item.get('size')
         download(f'https://huggingface.co/{repo}/resolve/{rev}/{name}',target,sha,size)
