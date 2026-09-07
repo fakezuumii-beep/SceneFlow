@@ -56,7 +56,8 @@ def download(url,path,sha=None,size=None):
 
 def model(repo,rev,folder,only):
     def model_path(name):
-        return folder.joinpath(*Path(str(name).replace('\\','/')).parts)
+        normalized=str(name).replace('\\','/')
+        return Path(os.path.join(os.fspath(folder), *normalized.split('/')))
 
     wanted=set(str(name).replace('\\','/') for name in only)
     manifest_path=folder/'installed.json'
