@@ -22,6 +22,10 @@ class EngineSetupTests(unittest.TestCase):
                 engine_setup.model('example/model','fixed',root,['nested/model.bin'])
             request.assert_not_called()
 
+            with patch.object(engine_setup.requests,'get') as request:
+                engine_setup.model('example/model','fixed',root,[r'nested\model.bin'])
+            request.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
