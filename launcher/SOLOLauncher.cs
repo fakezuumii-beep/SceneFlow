@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -113,6 +114,12 @@ internal sealed class LauncherForm : Form
         catch { return false; }
     }
 
+    private static Encoding PowerShellOutputEncoding()
+    {
+        try { return Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage); }
+        catch { return Encoding.Default; }
+    }
+
     private bool CoreFilesPresent()
     {
         string python = Path.Combine(app, ".runtime", "python", "cpython-3.12.10-windows-x86_64-none", "python.exe");
@@ -151,8 +158,9 @@ internal sealed class LauncherForm : Form
         psi.CreateNoWindow = true;
         psi.RedirectStandardOutput = true;
         psi.RedirectStandardError = true;
-        psi.StandardOutputEncoding = Encoding.UTF8;
-        psi.StandardErrorEncoding = Encoding.UTF8;
+        Encoding outputEncoding = PowerShellOutputEncoding();
+        psi.StandardOutputEncoding = outputEncoding;
+        psi.StandardErrorEncoding = outputEncoding;
         psi.EnvironmentVariables["SOLO_PORTABLE"] = "1";
         psi.EnvironmentVariables["SOLO_PORT"] = port.ToString();
         psi.EnvironmentVariables["SOLO_DATA_DIR"] = data;
@@ -191,7 +199,7 @@ internal sealed class LauncherForm : Form
             else Add("\u6838\u5fc3\u6587\u4ef6\u5df2\u5b8c\u6574\u3002");
             SetStatus("\u6b63\u5728\u542f\u52a8 SOLO \u5de5\u4f5c\u53f0...");
             if (!WaitHealth(1)) StartServer();
-            if (!WaitHealth(30)) throw new Exception("\u7aef\u53e3 8766 \u65e0\u6cd5\u542f\u52a8\uff0c\u8bf7\u67e5\u770b data\\logs\\server-error.log\u3002");
+            if (!WaitHealth(30)) throw new Exception("\u7aef\u53e3 " + port.ToString() + " \u65e0\u6cd5\u542f\u52a8\uff0c\u8bf7\u67e5\u770b data\\logs\\server-error.log\u3002");
             Add("/health \u68c0\u67e5\u6210\u529f\u3002");
             SetStatus("\u5de5\u4f5c\u53f0\u5df2\u542f\u52a8\uff0c\u6b63\u5728\u6253\u5f00\u6d4f\u89c8\u5668...");
             Process.Start(new ProcessStartInfo("http://127.0.0.1:" + port.ToString()) { UseShellExecute = true });
