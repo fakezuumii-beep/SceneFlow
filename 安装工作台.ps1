@@ -6,6 +6,11 @@ $runtime = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 $toolRoot = Join-Path $PSScriptRoot '.runtime'
 $uvPath = Join-Path $toolRoot 'uv\uv.exe'
 $ffmpegBin = Join-Path $toolRoot 'ffmpeg\bin'
+$pythonInstallRoot = Join-Path $toolRoot 'python'
+$bundledPython = Join-Path $pythonInstallRoot 'cpython-3.12.10-windows-x86_64-none\python.exe'
+$mainWheelhouse = Join-Path $PSScriptRoot '.offline\main-wheels'
+$env:UV_PYTHON_INSTALL_DIR = $pythonInstallRoot
+$env:UV_CACHE_DIR = Join-Path $toolRoot 'uv-cache'
 
 function Download-File([string]$Url, [string]$Target) {
     $folder = Split-Path -Parent $Target
@@ -48,8 +53,13 @@ function Ensure-Uv {
 function Ensure-Python {
     if (Test-Path -LiteralPath $runtime) { return }
     $uv = Ensure-Uv
-    Write-Host '正在自动下载 Python 3.12.10 并创建项目独立环境…'
-    & $uv venv .venv --python 3.12.10
+    if (Test-Path -LiteralPath $bundledPython) {
+        Write-Host '正在使用随包附带的 Python 3.12.10 创建项目独立环境…'
+        & $uv venv .venv --python $bundledPython
+    } else {
+        Write-Host '正在自动下载 Python 3.12.10 并创建项目独立环境…'
+        & $uv venv .venv --python 3.12.10
+    }
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtime)) {
         throw 'Python 3.12 独立环境自动安装失败，重新运行安装程序可以继续。'
     }
@@ -97,12 +107,20 @@ Ensure-Python
 Ensure-FFmpeg
 
 & $runtime -m ensurepip --upgrade
-& $runtime -m pip install -r requirements.txt
+if (Test-Path -LiteralPath $mainWheelhouse) {
+    Write-Host '正在从随包依赖安装工作台环境…'
+    & $runtime -m pip install --no-index --find-links $mainWheelhouse -r requirements.txt
+} else {
+    & $runtime -m pip install -r requirements.txt
+}
 if ($LASTEXITCODE -ne 0) { throw '工作台依赖安装失败，重新运行可以继续。' }
 if (-not $SkipModels) {
     $modelArgs = @('engine_setup.py')
     if ($CpuOnly) { $modelArgs += '--cpu' }
     & $runtime @modelArgs
     if ($LASTEXITCODE -ne 0) { throw '本地媒体引擎安装未完成，重新运行可以继续；下载的文件会保留。' }
+}
+if (Test-Path -LiteralPath $uvPath) {
+    & $uvPath cache clean | Out-Host
 }
 Write-Host '安装完成。Python 与 FFmpeg 均由工作台独立管理；填写 DeepSeek 与 Pexels API Key 后，双击「启动工作台.bat」开始创作。'

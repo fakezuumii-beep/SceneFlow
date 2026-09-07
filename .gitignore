@@ -1,5 +1,7 @@
 data/
 .venv/
+.offline/
+.release-build/
 __pycache__/
 .pytest_cache/
 .runtime/

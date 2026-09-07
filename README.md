@@ -47,7 +47,17 @@
 3. 双击 `启动工作台.bat`，浏览器打开 `http://127.0.0.1:8766`。
 4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key，然后安装/校验 MuseTalk。
 
-首次转录所选 faster-whisper 模型时会自动下载模型。设置里的 `small` 更快，`large-v3` 更准确。
+首次转录所选 faster-whisper 模型时会自动下载模型。默认使用轻量的 `base`；`small` 更快且更均衡，`large-v3` 更准确。
+
+## Windows 发布包
+
+发布页提供三种 Windows x64 下载：
+
+- `Online`：最小源码包。安装器会自动准备 Python、FFmpeg、Python 依赖和所需模型，适合网络稳定的用户。
+- `Runtime`：内置 Python 3.12、uv、FFmpeg 和主要 Python wheel，首次安装不需要重复下载这些基础组件；媒体引擎和模型仍按需联网安装。
+- `Full-NVIDIA-cu126`：包含 CUDA 12.6 媒体依赖、MuseTalk 权重和 faster-whisper `base`，下载全部分卷后运行随附合并脚本即可离线安装（需要 NVIDIA 驱动支持 CUDA）。
+
+三种包都使用 `base` 作为默认 Whisper 模型；安装完成后可在「连接与设置」切换 `small` 或 `large-v3`。
 
 PowerShell 也可以直接运行：
 

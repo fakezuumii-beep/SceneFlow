@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
 $sourceFiles = Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File | Where-Object {
-    $_.FullName -ne $PSCommandPath -and $_.FullName -notmatch '[\\/](data|engines|outputs|\.venv|\.runtime|\.git|\.pytest_cache|\.workbuddy|__pycache__)[\\/]'
+    $_.FullName -ne $PSCommandPath -and $_.FullName -notmatch '[\\/](data|engines|outputs|\.venv|\.runtime|\.release-build|\.git|\.pytest_cache|\.workbuddy|__pycache__)[\\/]'
 }
 $forbidden = @(
     'Qwen3-4B',

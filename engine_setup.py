@@ -6,6 +6,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent
 ENGINES = ROOT / 'engines'
+OFFLINE = ROOT / '.offline'
 MUSETALK_REPO = 'TMElyralab/MuseTalk'
 MUSETALK_REV = '0a89dec45a0192b824e3cf4daf96c239440c5ed8'
 MUSETALK_MODEL_REV = '3ef28bc5cff08c90ad8178a25f1b570cd800170f'
@@ -54,6 +55,20 @@ def download(url,path,sha=None,size=None):
             time.sleep(2)
 
 def model(repo,rev,folder,only):
+    manifest_path=folder/'installed.json'
+    try:
+        installed=json.loads(manifest_path.read_text(encoding='utf-8'))
+        records={item['file']:item for item in installed.get('files',[])}
+        if installed.get('repo')==repo and installed.get('revision')==rev and all(
+            (folder/name).is_file() and name in records and
+            (not records[name].get('size') or (folder/name).stat().st_size==records[name]['size']) and
+            (not records[name].get('sha256') or digest(folder/name)==records[name]['sha256'])
+            for name in only
+        ):
+            emit(f'已校验本地模型：{repo}')
+            return
+    except (OSError,ValueError,KeyError,TypeError,json.JSONDecodeError):
+        pass
     response=requests.get(f'https://huggingface.co/api/models/{repo}/revision/{rev}?blobs=true',timeout=30)
     response.raise_for_status();info=response.json();manifest=[]
     wanted=set(only)
@@ -74,9 +89,9 @@ def command(args):
     subprocess.run([str(x) for x in args],check=True,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
 
 def uv_command():
-    if shutil.which('uv'):return [shutil.which('uv')]
     bundled=ROOT/'.runtime'/'uv'/'uv.exe'
     if bundled.is_file():return [str(bundled)]
+    if shutil.which('uv'):return [shutil.which('uv')]
     try:__import__('uv')
     except ImportError:command([sys.executable,'-m','pip','install','uv==0.8.22'])
     return [sys.executable,'-m','uv']
@@ -104,11 +119,19 @@ def install_source():
 
 def setup_runtime(cpu=False):
     uv=uv_command();env=ENGINES/'media-env';py=env/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
-    if not py.exists():command(uv+['venv',str(env),'--python','3.12'])
-    emit('安装独立媒体环境（首次需要下载 PyTorch）…')
-    command(uv+['pip','install','--python',str(py),'torch==2.8.0','torchaudio==2.8.0','torchvision==0.23.0',
-                '--index-url','https://download.pytorch.org/whl/'+('cpu' if cpu else 'cu126')])
-    command(uv+['pip','install','--python',str(py),'-r',str(ROOT/'requirements-media.txt')])
+    if not py.exists():command(uv+['venv',str(env),'--python',sys.executable])
+    wheelhouse=OFFLINE/'media-wheels'
+    if wheelhouse.is_dir() and not cpu:
+        emit('从随包依赖安装独立 CUDA 媒体环境…')
+        common=['--no-index','--find-links',str(wheelhouse)]
+        command(uv+['pip','install','--python',str(py)]+common+
+                ['torch==2.8.0+cu126','torchaudio==2.8.0+cu126','torchvision==0.23.0+cu126'])
+        command(uv+['pip','install','--python',str(py)]+common+['-r',str(ROOT/'requirements-media.txt')])
+    else:
+        emit('安装独立媒体环境（首次需要下载 PyTorch）…')
+        command(uv+['pip','install','--python',str(py),'torch==2.8.0','torchaudio==2.8.0','torchvision==0.23.0',
+                    '--index-url','https://download.pytorch.org/whl/'+('cpu' if cpu else 'cu126')])
+        command(uv+['pip','install','--python',str(py),'-r',str(ROOT/'requirements-media.txt')])
     return env,py
 
 def setup_models():

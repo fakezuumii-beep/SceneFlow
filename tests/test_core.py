@@ -5,6 +5,17 @@ import core
 from unittest.mock import patch
 
 class TimelineTests(unittest.TestCase):
+    def test_default_asr_model_is_base(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(core,'PRIVATE',Path(folder)):
+            self.assertEqual(core.settings(True)['asr_model'],'base')
+
+    def test_packaged_asr_model_is_reported_without_user_cache(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as cache:
+            root=Path(folder);model=root/'engines'/'faster-whisper'/'base'
+            model.mkdir(parents=True);(model/'model.bin').write_bytes(b'model')
+            with patch.object(core,'ROOT',root), patch.dict('os.environ',{'HF_HUB_CACHE':cache}):
+                self.assertEqual(core.cached_models(),['base'])
+
     def test_parse_silencedetect_pairs_ordered_intervals(self):
         text='silence_start: 11.160312\nsilence_end: 12.067146 | silence_duration: 0.906834\n'
         self.assertEqual(core.parse_silencedetect(text),[{'start':11.160312,'end':12.067146}])

@@ -52,6 +52,10 @@
     <aside class="inspector">
       <div class="inspector-tabs"><button data-panel="setup" class="active">制作设置</button><button data-panel="shot">镜头详情</button><button data-panel="exports">导出记录</button></div>
       <section id="setupPanel" class="panel">
+        <div class="field-heading"><h3>Whisper 自动转录</h3><span class="subtle-tag">本地</span></div>
+        <label class="field-label">转录模型 <span>下次转录生效</span></label><select id="asrModel"><option value="large-v3">large-v3 · 更准确</option><option value="small">small · 更快</option><option value="base" selected>base · 默认 / 轻量</option></select>
+        <p class="help">选择音频转成字幕时使用的模型，日常默认 base；切换模型不会自动重做已经完成的字幕。</p>
+        <div class="divider"></div>
         <div class="field-heading"><span class="step-circle">1</span><h3>A-roll 口型生成</h3><span class="subtle-tag">MuseTalk 1.5</span></div>
         <p class="help" id="arollSummary">按 A-roll 的原音频生成口型，保持原镜头时间。</p><button class="button wide" id="arollButton">生成 A-roll 口型</button><p class="help">视频会按原顺序循环，保留已有眨眼、头部和身体动作，原声静音。口型由播客音频驱动；请选择首尾衔接自然的单人视频。一键生成和导出会自动补齐口型。</p>
         <div class="divider"></div><div class="field-heading"><span class="step-circle">2</span><h3>镜头编排</h3></div>
@@ -73,4 +77,4 @@
 <dialog id="newDialog"><div class="dialog-head"><h2>新建一期播客</h2><button class="close-dialog" aria-label="关闭">×</button></div><form id="newForm"><label>播客名称<input name="name" required placeholder="给这一期取个名字" autocomplete="off"></label><button class="button primary wide">创建项目</button></form></dialog>
 <dialog id="confirmDialog"><div class="dialog-head"><h2>重新处理</h2><button class="close-dialog" aria-label="关闭">×</button></div><p id="confirmMessage"></p><div class="confirm-actions"><button class="button" id="confirmNo">取消</button><button class="button primary" id="confirmYes">继续</button></div></dialog>
 <div id="toast" role="status"></div>
-<script src="/app.js?v=20260906-global-api-v2"></script></body></html>
+<script src="/app.js?v=20260907-asr-base-default-v2"></script></body></html>

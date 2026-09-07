@@ -37,7 +37,7 @@ def _aroll_batch_size(s):
 
 def settings(private=False):
     s = {'llm_base_url': 'https://api.deepseek.com', 'llm_model': 'deepseek-v4-flash', 'llm_api_key': '', 'pexels_api_key': '',
-         'pixabay_api_key': '', 'asr_model': 'large-v3', 'asr_device': 'auto', 'aroll_batch_size': 8,
+         'pixabay_api_key': '', 'asr_model': 'base', 'asr_device': 'auto', 'aroll_batch_size': 8,
          'language': 'zh'}
     path = PRIVATE / 'settings.json'
     if path.exists():
@@ -61,7 +61,7 @@ def save_settings(values):
         if key.endswith('api_key') and not value: continue
         s[key] = value
     if 'aroll_batch_size' in s: s['aroll_batch_size']=_aroll_batch_size(s)
-    if s.get('asr_model', 'large-v3') not in ('small','base','large-v3'): raise ValueError('请选择支持的转录模型')
+    if s.get('asr_model', 'base') not in ('small','base','large-v3'): raise ValueError('请选择支持的转录模型')
     if s.get('asr_device', 'auto') not in ('auto','cpu','cuda'): raise ValueError('设备设置无效')
     if _aroll_batch_size(s)!=s.get('aroll_batch_size',8): raise ValueError('口型显存档位无效')
     if not str(s.get('llm_base_url','')).startswith(('https://','http://')):raise ValueError('请填写 DeepSeek API 服务地址')
@@ -70,8 +70,14 @@ def save_settings(values):
     return settings()
 
 def cached_models():
-    hub = Path(os.environ.get('HF_HUB_CACHE', str(Path.home()/'.cache/huggingface/hub')))
-    return [m for m in ('base','small','large-v3') if any((hub/f'models--Systran--faster-whisper-{m}'/'snapshots').glob('*/model.bin'))]
+    roots = [ROOT/'engines'/'faster-whisper'/'cache',
+             Path(os.environ.get('HF_HUB_CACHE', str(Path.home()/'.cache/huggingface/hub')))]
+    available=[]
+    for model in ('base','small','large-v3'):
+        direct=ROOT/'engines'/'faster-whisper'/model/'model.bin'
+        if direct.is_file() or any(any((root/f'models--Systran--faster-whisper-{model}'/'snapshots').glob('*/model.bin')) for root in roots):
+            available.append(model)
+    return available
 
 def project_dir(pid):
     if not re.fullmatch(r'[a-f0-9]{12}', pid): raise ValueError('无效的项目编号')

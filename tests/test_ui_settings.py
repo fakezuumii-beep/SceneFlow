@@ -37,6 +37,23 @@ class UiSettingsTests(unittest.TestCase):
         self.assertGreater(export_position, settings_panel)
         self.assertIn("$('#exportButton').onclick=()=>startJob('render')", self.javascript)
 
+    def test_whisper_models_are_available_in_production_settings(self):
+        panel = self.html.split('<section id="setupPanel"', 1)[1].split('</section>', 1)[0]
+        self.assertIn('id="asrModel"', panel)
+        for model in ('large-v3', 'small', 'base'):
+            self.assertIn(f'value="{model}"', panel)
+        self.assertIn("$('#asrModel').onchange", self.javascript)
+        self.assertIn("body:JSON.stringify({asr_model:e.target.value})", self.javascript)
+        self.assertIn('applyAsrSettings(await api(\'/settings\'))', self.javascript)
+
+    def test_installer_supports_project_local_offline_runtime(self):
+        installer=(ROOT/'安装工作台.ps1').read_text(encoding='utf-8')
+        engine=(ROOT/'engine_setup.py').read_text(encoding='utf-8')
+        self.assertIn('UV_PYTHON_INSTALL_DIR',installer)
+        self.assertIn(".offline\\main-wheels",installer)
+        self.assertIn("OFFLINE/'media-wheels'",engine)
+        self.assertIn("torch==2.8.0+cu126",engine)
+
     def test_running_pipeline_uses_the_eight_character_frames(self):
         self.assertIn('function runningPipelineStage(p)', self.javascript)
         self.assertIn("const direct={tts:0,transcribe:0,plan:1,materials:2,aroll:2,render:3}", self.javascript)

@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={project:null,projects:[],selected:null,panel:'setup',filter:'all',inputMode:'text',busy:false,polling:false,previewKey:'',pending:0,saving:Promise.resolve(),arollSupported:false,ttsStatus:null};
+const state={project:null,projects:[],selected:null,panel:'setup',filter:'all',inputMode:'text',busy:false,polling:false,previewKey:'',pending:0,saving:Promise.resolve(),arollSupported:false,ttsStatus:null,asrModel:'base'};
 let previewAnimation=0;
 const voiceCatalog={
   'azure-v1':{
@@ -261,6 +261,13 @@ api('/host-materials').then(items=>{$('#hostMaterial').innerHTML='<option value=
 const drop=$('#audioDrop');drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragover')};drop.ondragleave=()=>drop.classList.remove('dragover');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragover');if(!state.busy)uploadFile('audio',e.dataTransfer.files[0])};
 $('#ratio').oninput=e=>$('#ratioValue').textContent=e.target.value+'%';$('#ratio').onchange=e=>patchOptions({broll_ratio:Number(e.target.value)});
 $('#materialSource').onchange=e=>patchOptions({source:e.target.value});$('#resolution').onchange=e=>patchOptions({resolution:e.target.value});$('#subtitlesToggle').onchange=e=>patchOptions({subtitles:e.target.checked});
+$('#asrModel').onchange=e=>guarded(async()=>{
+  const previous=state.asrModel;
+  try{
+    const s=await api('/settings',{method:'PUT',body:JSON.stringify({asr_model:e.target.value})});
+    applyAsrSettings(s);toast(`Whisper 转录模型已切换为 ${s.asr_model}，下次转录生效`);
+  }catch(error){e.target.value=previous;throw error}
+});
 $('#transcribeButton').onclick=()=>startJob('transcribe');$('#planButton').onclick=()=>startJob('plan');$('#materialsButton').onclick=()=>startJob('materials');$('#arollButton').onclick=()=>startJob('aroll');$('#autoButton').onclick=()=>startJob('all');$('#exportButton').onclick=()=>startJob('render');
 $('#cancelJob').onclick=()=>guarded(async()=>{const r=await api('/projects/'+pid()+'/cancel',{method:'POST',body:'{}'});toast(r.message)});
 $('#resumeJob').onclick=()=>{const j=state.project.job;startJob(['all','tts','setup_models','transcribe','plan','materials','aroll','render'].includes(j?.action)?j.action:'all',j?.shot_id||null)};
@@ -272,6 +279,7 @@ $('#scrubber').oninput=e=>seek(Number(e.target.value));
 ['timeupdate','play','pause','ended','seeked'].forEach(event=>$('#audioPlayer').addEventListener(event,()=>{syncPreview(event==='seeked');if(event==='play')startPreviewAnimation()}));
 async function openGlobalApiSettings(){
   const s=await api('/settings'),form=$('#settingsForm');
+  applyAsrSettings(s);
   for(const k of ['llm_base_url','llm_model','asr_model','asr_device','aroll_batch_size'])form.elements[k].value=s[k];
   for(const k of ['llm_api_key','pexels_api_key','pixabay_api_key']){form.elements[k].value='';form.elements[k].placeholder=s[k+'_configured']?'••••••••••••':'尚未配置'}
   $('#connectionStatus').textContent=`全局配置 · DeepSeek：${s.llm_api_key_configured?'已配置':'未配置 Key'}；Pexels：${s.pexels_api_key_configured?'已配置':'未配置 Key'}。`;
@@ -279,7 +287,12 @@ async function openGlobalApiSettings(){
 }
 $('#globalApiButton').onclick=()=>guarded(openGlobalApiSettings);
 $('#settingsButton').onclick=()=>guarded(openGlobalApiSettings);
-$('#settingsForm').onsubmit=e=>{e.preventDefault();guarded(async()=>{const form=e.target,body=Object.fromEntries(new FormData(form));await api('/settings',{method:'PUT',body:JSON.stringify(body)});$('#settingsDialog').close();toast('全局 API 配置已保存')})};
+$('#settingsForm').onsubmit=e=>{e.preventDefault();guarded(async()=>{const form=e.target,body=Object.fromEntries(new FormData(form));const s=await api('/settings',{method:'PUT',body:JSON.stringify(body)});applyAsrSettings(s);$('#settingsDialog').close();toast('全局 API 配置已保存')})};
+function applyAsrSettings(s){
+  state.asrModel=['large-v3','small','base'].includes(s?.asr_model)?s.asr_model:'base';
+  $('#asrModel').value=state.asrModel;
+  const advanced=$('#settingsForm').elements.asr_model;if(advanced)advanced.value=state.asrModel;
+}
 function readDraft(id){try{return JSON.parse(localStorage.getItem('solo-script-'+id)||'null')}catch{return null}}
 function scriptValue(){return {text:$('#scriptText').value,provider:$('#ttsProvider').value,speaker:$('#ttsSpeaker').value,language:$('#ttsLanguage').value,speed:Number($('#ttsSpeed').value)}}
 function rememberScript(){if(state.project)localStorage.setItem('solo-script-'+pid(),JSON.stringify(scriptValue()))}
@@ -324,5 +337,5 @@ async function refreshLocalModels(){
 }
 refreshLocalModels().catch(()=>{});
 async function checkService(){try{const h=await api('/health');state.arollSupported=h.features?.reliable_planning===true&&!h.update_required}catch{state.arollSupported=false}}
-guarded(async()=>{await checkService();await refreshProjects();if(!state.projects.length){const p=await api('/projects',{method:'POST',body:JSON.stringify({name:'我的第一期单人播客'})});await refreshProjects()}
+guarded(async()=>{await checkService();applyAsrSettings(await api('/settings'));await refreshProjects();if(!state.projects.length){const p=await api('/projects',{method:'POST',body:JSON.stringify({name:'我的第一期单人播客'})});await refreshProjects()}
   const saved=localStorage.getItem('solo-project');await openProject(state.projects.find(p=>p.id===saved)?.id||state.projects[0].id);setInterval(poll,1800)});

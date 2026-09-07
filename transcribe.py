@@ -7,6 +7,9 @@ from worker_progress import atomic_json as write_progress
 
 audio,output,status,model,device,language=sys.argv[1:7]
 reference_path=Path(sys.argv[7]) if len(sys.argv)>7 else None
+root=Path(__file__).resolve().parent
+local_model=root/'engines'/'faster-whisper'/model
+download_root=root/'engines'/'faster-whisper'/'cache'
 from faster_whisper import WhisperModel
 import ctranslate2
 
@@ -17,7 +20,9 @@ devices=['cuda','cpu'] if device=='auto' and ctranslate2.get_cuda_device_count()
 for i,chosen in enumerate(devices):
     try:
         report(0,f'正在使用 {chosen.upper()} 加载 Whisper {model}')
-        engine=WhisperModel(model,device=chosen,compute_type='float16' if chosen=='cuda' else 'int8',local_files_only=False,cpu_threads=4,num_workers=1)
+        model_ref=str(local_model) if (local_model/'model.bin').is_file() else model
+        engine=WhisperModel(model_ref,device=chosen,compute_type='float16' if chosen=='cuda' else 'int8',
+                            download_root=str(download_root),local_files_only=False,cpu_threads=4,num_workers=1)
         chunks,info=engine.transcribe(audio,language=language or None,beam_size=5,vad_filter=True,condition_on_previous_text=False,word_timestamps=True)
         segments=[];all_words=[];audio_end=0.0
         for s in chunks:
