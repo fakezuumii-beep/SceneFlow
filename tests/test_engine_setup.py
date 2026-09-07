@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,7 @@ class EngineSetupTests(unittest.TestCase):
                 'files':[{'file':'model.bin','size':target.stat().st_size,'sha256':digest}],
             }),encoding='utf-8')
             print('MODEL_FIXTURE', root, target, target.is_file(), (root/'installed.json').is_file(), flush=True)
+            os.environ['SOLO_DEBUG_MODEL']='1'
             with patch.object(engine_setup.requests,'get') as request:
                 engine_setup.model('example/model','fixed',root,['model.bin'])
             request.assert_not_called()
@@ -26,6 +28,7 @@ class EngineSetupTests(unittest.TestCase):
             with patch.object(engine_setup.requests,'get') as request:
                 engine_setup.model('example/model','fixed',root,[r'model.bin'])
             request.assert_not_called()
+            os.environ.pop('SOLO_DEBUG_MODEL',None)
 
 
 if __name__ == '__main__':
