@@ -57,17 +57,27 @@ def download(url,path,sha=None,size=None):
 def model(repo,rev,folder,only):
     def model_path(name):
         normalized=str(name).replace('\\','/')
-        return Path(os.path.join(os.fspath(folder), *normalized.split('/')))
+        target=Path(os.path.join(os.fspath(folder), *normalized.split('/')))
+        if target.is_file(): return target
+        # Temporary directories on Windows can be represented by a different
+        # path flavor when tests run under a hosted runner.  Resolve the same
+        # relative path from the directory tree before treating it as missing.
+        for candidate in folder.rglob(Path(normalized).name):
+            try:
+                if candidate.relative_to(folder).as_posix().casefold()==normalized.casefold(): return candidate
+            except ValueError:
+                pass
+        return target
 
     wanted=set(str(name).replace('\\','/') for name in only)
     manifest_path=folder/'installed.json'
     try:
         installed=json.loads(manifest_path.read_text(encoding='utf-8'))
-        records={str(item['file']).replace('\\','/'):item for item in installed.get('files',[])}
+        records={str(item['file']).replace('\\','/').casefold():item for item in installed.get('files',[])}
         if installed.get('repo')==repo and installed.get('revision')==rev and all(
-            model_path(name).is_file() and name in records and
-            (not records[name].get('size') or model_path(name).stat().st_size==records[name]['size']) and
-            (not records[name].get('sha256') or digest(model_path(name))==records[name]['sha256'])
+            model_path(name).is_file() and name.casefold() in records and
+            (not records[name.casefold()].get('size') or model_path(name).stat().st_size==records[name.casefold()]['size']) and
+            (not records[name.casefold()].get('sha256') or digest(model_path(name))==records[name.casefold()]['sha256'])
             for name in wanted
         ):
             emit(f'已校验本地模型：{repo}')
