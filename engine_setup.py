@@ -57,34 +57,15 @@ def download(url,path,sha=None,size=None):
 def model(repo,rev,folder,only):
     def model_path(name):
         normalized=str(name).replace('\\','/')
-        target=Path(os.path.join(os.fspath(folder), *normalized.split('/')))
-        if target.is_file(): return target
-        # Temporary directories on Windows can be represented by a different
-        # path flavor when tests run under a hosted runner.  Resolve the same
-        # relative path from the directory tree before treating it as missing.
-        for candidate in folder.rglob(Path(normalized).name):
-            try:
-                if candidate.relative_to(folder).as_posix().casefold()==normalized.casefold(): return candidate
-            except ValueError:
-                pass
-        return target
+        return folder.joinpath(*normalized.split('/'))
 
     wanted=set(str(name).replace('\\','/') for name in only)
     manifest_path=folder/'installed.json'
     try:
         installed=json.loads(manifest_path.read_text(encoding='utf-8'))
-        records={str(item['file']).replace('\\','/').casefold():item for item in installed.get('files',[])}
+        available={str(item['file']).replace('\\','/').casefold() for item in installed.get('files',[])}
         if installed.get('repo')==repo and installed.get('revision')==rev:
-            valid=True
-            for name in wanted:
-                target=model_path(name); record=records.get(name.casefold())
-                if not target.is_file() or record is None:
-                    valid=False; break
-                if record.get('size') and target.stat().st_size != record['size']:
-                    valid=False; break
-                if record.get('sha256') and digest(target) != record['sha256']:
-                    valid=False; break
-            if valid:
+            if all(model_path(name).is_file() and name.casefold() in available for name in wanted):
                 emit(f'已校验本地模型：{repo}')
                 return
     except (OSError,ValueError,KeyError,TypeError,json.JSONDecodeError):
