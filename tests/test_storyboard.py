@@ -4,9 +4,9 @@ import unittest
 import storyboard
 
 
-def semantic(candidate, semantic_type, subject=''):
+def semantic(candidate, semantic_type, subject='', importance='normal', emotion='neutral'):
     return {'id':candidate['id'],'text':candidate['text'],'semantic_type':semantic_type,
-            'visual_subject':subject,'importance':'normal','emotion':'neutral'}
+            'visual_subject':subject,'importance':importance,'emotion':emotion}
 
 
 class StoryboardRuleTests(unittest.TestCase):
@@ -21,66 +21,78 @@ class StoryboardRuleTests(unittest.TestCase):
             bad=copy.deepcopy(good);bad['segments'][0][field]=1
             with self.assertRaises(ValueError):storyboard.validate_semantic_response(bad,candidates,self.rules)
 
-    def test_scores_are_loaded_from_configuration(self):
+    def test_dual_values_use_visual_subject_importance_and_emotion(self):
         event=semantic({'id':0,'text':'他来到北京。'},'event','年轻人初到北京')
         opinion=semantic({'id':1,'text':'我认为这很重要。'},'opinion','')
-        self.assertEqual(storyboard.score_candidate(event,self.rules)[0],4)
-        self.assertEqual(storyboard.score_candidate(opinion,self.rules)[0],-2)
-        self.assertEqual(set(storyboard.score_candidate(event,self.rules)[1][0]),{'rule','value'})
+        emotional=semantic({'id':2,'text':'这是最重要的一刻。'},'event','颁奖礼','high','surprised')
+        self.assertEqual(storyboard.value_candidate(event,self.rules)[:2],(4,1))
+        self.assertEqual(storyboard.value_candidate(opinion,self.rules)[:2],(0,3))
+        self.assertEqual(storyboard.value_candidate(emotional,self.rules)[:2],(4,4.5))
+        self.assertEqual(set(storyboard.value_candidate(event,self.rules)[2][0]),{'rule','value'})
 
-    def test_zero_to_two_uses_whole_episode_ratio_only(self):
+    def test_optional_pool_is_global_and_not_appearance_greedy(self):
         candidates=[{'id':i,'start':i*2,'end':i*2+1.8,'text':f'段落{i}。'} for i in range(4)]
-        semantics=[semantic(candidates[0],'hook'),semantic(candidates[1],'intro','温州苍南'),
-                   semantic(candidates[2],'event','粉紫色日落'),semantic(candidates[3],'summary')]
-        result=storyboard.classify_candidates(candidates,semantics,8,60,self.rules)
-        self.assertEqual([item['broll_score'] for item in result],[-2,0,4,-2])
-        self.assertEqual([item['kind'] for item in result],['A','B','B','A'])
-        self.assertIn('全片 B-roll',result[1]['decision_reason'])
-        lower=storyboard.classify_candidates(candidates,semantics,8,25,self.rules)
-        self.assertEqual([item['kind'] for item in lower],['A','A','B','A'])
+        # Both middle items are optional.  The later concrete visual has a
+        # higher dual-value advantage and must win even though it appears later.
+        semantics=[semantic(candidates[0],'hook'),semantic(candidates[1],'quote',''),
+                   semantic(candidates[2],'other','粉紫色日落'),semantic(candidates[3],'summary')]
+        result=storyboard.classify_candidates(candidates,semantics,8,25,self.rules)
+        self.assertEqual([(item['visual_value'],item['host_value']) for item in result],[(0,3),(0,2),(2,1),(0,3)])
+        self.assertEqual([item['kind'] for item in result],['A','A','B','A'])
+        self.assertIn('全片候选池',result[2]['decision_reason'])
+
+    def test_global_subset_follows_target_duration_before_value_tiebreak(self):
+        rules=copy.deepcopy(self.rules);rules['anchors']={'opening_aroll':False,'closing_aroll':False}
+        def item(name,seconds,visual,host):
+            return {'name':name,'text':name,'candidate_ids':[name],'duration':seconds,
+                    'visual_value':visual,'host_value':host,'decision_reason':''}
+        projected=storyboard._assign_kinds_by_ratio([
+            item('later-high',6,2,1),item('exact-duration',4,1.5,1),item('fixed-a',10,0,3),
+        ],20,20,rules)
+        kinds={entry['name']:entry['kind'] for entry in projected}
+        self.assertEqual(kinds,{'later-high':'A','exact-duration':'B','fixed-a':'A'})
+
+    def test_optional_selection_is_invariant_to_input_order(self):
+        rules=copy.deepcopy(self.rules);rules['anchors']={'opening_aroll':False,'closing_aroll':False}
+        items=[{'name':name,'text':name,'candidate_ids':[name],'duration':2,
+                'visual_value':visual,'host_value':1,'decision_reason':''}
+               for name,visual in [('weak',.5),('best',1.9),('middle',1.4),('second',1.7)]]
+        first=storyboard._assign_kinds_by_ratio(items,8,50,rules)
+        second=storyboard._assign_kinds_by_ratio(list(reversed(items)),8,50,rules)
+        chosen=lambda values:{item['name'] for item in values if item['kind']=='B'}
+        self.assertEqual(chosen(first),{'best','second'})
+        self.assertEqual(chosen(first),chosen(second))
 
     def test_short_merge_uses_duration_weighted_score_and_auditable_breakdown(self):
         rules=copy.deepcopy(self.rules);rules['anchors']={'opening_aroll':False,'closing_aroll':False}
         items=[
             {'candidate_ids':[0],'text':'短句，','start':0,'end':1,'duration':1,'semantic_type':'opinion',
-             'visual_subject':'','broll_score':-2,'score_breakdown':[{'rule':'semantic_type','value':-2}],
+             'visual_subject':'','visual_value':0,'host_value':3,
+             'visual_value_breakdown':[{'rule':'semantic_type','value':0}],
+             'host_value_breakdown':[{'rule':'semantic_type','value':2},{'rule':'importance','value':1},{'rule':'emotion','value':0}],
              'kind':'A','decision_reason':'测试'},
             {'candidate_ids':[1],'text':'明确事件。','start':1,'end':4,'duration':3,'semantic_type':'event',
-             'visual_subject':'日落','broll_score':4,'score_breakdown':[{'rule':'semantic_type','value':2},{'rule':'visual_subject','value':2}],
+             'visual_subject':'日落','visual_value':4,'host_value':1,
+             'visual_value_breakdown':[{'rule':'semantic_type','value':2},{'rule':'visual_subject','value':2}],
+             'host_value_breakdown':[{'rule':'semantic_type','value':0},{'rule':'importance','value':1},{'rule':'emotion','value':0}],
              'kind':'B','decision_reason':'测试'},
         ]
         merged=storyboard.merge_short_narratives(items,rules,4,60)
         self.assertEqual(len(merged),1)
-        self.assertEqual(merged[0]['broll_score'],2.5)
-        self.assertEqual(round(sum(part['value'] for part in merged[0]['score_breakdown']),3),2.5)
-        self.assertEqual([(part['duration'],part['score']) for part in merged[0]['score_weighting']],[(1.0,-2.0),(3.0,4.0)])
+        self.assertEqual((merged[0]['visual_value'],merged[0]['host_value']),(3,1.5))
+        self.assertEqual(round(sum(part['value'] for part in merged[0]['visual_value_breakdown']),3),3)
+        self.assertEqual([(part['duration'],part['visual_value'],part['host_value']) for part in merged[0]['value_weighting']],
+                         [(1.0,0.0,3.0),(3.0,4.0,1.0)])
         self.assertEqual(merged[0]['kind'],'B')
         self.assertIn('实际时长加权',merged[0]['decision_reason'])
 
-    def test_d1_disputed_shots_are_locked_to_content_and_global_ratio_rules(self):
-        a02=storyboard.score_candidate(semantic({'id':2,'text':'温州苍南'},'intro','温州苍南'),self.rules)[0]
-        a12=storyboard.score_candidate(semantic({'id':18,'text':'下棋晒网的原住民'},'person','原住民'),self.rules)[0]
-        a18,_=storyboard._weighted_score_details([
-            {'candidate_ids':[28],'duration':2.86,'score':4,'score_breakdown':[{'rule':'semantic_type','value':2},{'rule':'visual_subject','value':2}]},
-            {'candidate_ids':[29],'duration':1.68,'score':-2,'score_breakdown':[{'rule':'semantic_type','value':-2}]},
-        ])
-        a20,_=storyboard._weighted_score_details([
-            {'candidate_ids':[31],'duration':1.68,'score':-2,'score_breakdown':[{'rule':'semantic_type','value':-2}]},
-            {'candidate_ids':[32],'duration':2.58,'score':0,'score_breakdown':[{'rule':'semantic_type','value':-2},{'rule':'visual_subject','value':2}]},
-        ])
-        self.assertEqual((a02,a12,a18,a20),(0,4,1.78,-0.789))
-        rules=copy.deepcopy(self.rules);rules['anchors']={'opening_aroll':False,'closing_aroll':False}
-        def item(name,seconds,score):
-            return {'name':name,'duration':seconds,'broll_score':score,'decision_reason':''}
-        projected=storyboard._assign_kinds_by_ratio([
-            item('开场明确A',47.24,-2),item('A-02',5.22,a02),item('其他明确B',36,4),
-            item('A-12',3.02,a12),item('A-18',4.54,a18),item('A-20',4.26,a20),
-        ],100.28,60,rules)
-        kinds={entry['name']:entry['kind'] for entry in projected}
-        self.assertEqual(kinds['A-02'],'B')
-        self.assertEqual(kinds['A-12'],'B')
-        self.assertEqual(kinds['A-18'],'B')
-        self.assertEqual(kinds['A-20'],'A')
+    def test_visual_subject_boilerplate_is_normalized_to_empty(self):
+        candidate={'id':0,'text':'这是抽象表达。'}
+        for value in ('没有具体可视化对象','无明确主体','不适用','抽象观点','No concrete visual subject'):
+            payload={'segments':[semantic(candidate,'other',value)]}
+            item=storyboard.validate_semantic_response(payload,[candidate],self.rules)[0]
+            self.assertEqual(item['visual_subject'],'')
+            self.assertEqual(storyboard.value_candidate(item,self.rules)[0],0)
 
     def test_short_candidate_merges_and_visual_layer_stays_separate(self):
         candidates=[
@@ -94,6 +106,36 @@ class StoryboardRuleTests(unittest.TestCase):
         self.assertEqual(narratives[0]['text'],'但这个决定，后来彻底改变了他的人生。')
         self.assertTrue(all(s['end']-s['start']>=2 for s in shots))
         self.assertTrue(all(s['narrative_ids'] for s in shots))
+
+    def test_merged_broll_searches_best_visual_child_not_longest_child(self):
+        rules=copy.deepcopy(self.rules);rules['anchors']={'opening_aroll':False,'closing_aroll':False}
+        candidates=[
+            {'id':0,'start':0,'end':.9,'text':'火山突然喷发，'},
+            {'id':1,'start':1,'end':3.9,'text':'这件事让我们继续思考。'},
+        ]
+        semantics=[semantic(candidates[0],'event','夜间火山喷发'),semantic(candidates[1],'other','')]
+        narratives,shots=storyboard.build_timeline(candidates,semantics,4,100,rules)
+        self.assertEqual(len(narratives),1)
+        self.assertEqual(narratives[0]['kind'],'B')
+        self.assertEqual(narratives[0]['semantic_type'],'other')  # longest child remains the narrative dominant
+        self.assertEqual(narratives[0]['visual_source']['candidate_ids'],[0])
+        self.assertEqual(shots[0]['visual_subject'],'夜间火山喷发')
+        self.assertEqual(shots[0]['keywords'][0],'夜间火山喷发')
+
+    def test_long_broll_returns_only_at_high_host_value_node(self):
+        rules=copy.deepcopy(self.rules)
+        candidates=[{'id':i,'start':i*3,'end':i*3+2.8,'text':f'段落{i}。'} for i in range(5)]
+        semantics=[semantic(candidates[0],'hook'),semantic(candidates[1],'event','城市街道'),
+                   semantic(candidates[2],'action','获奖者激动发言','high','surprised'),
+                   semantic(candidates[3],'event','人群庆祝'),semantic(candidates[4],'summary')]
+        narratives,_=storyboard.build_timeline(candidates,semantics,15,100,rules)
+        self.assertEqual([item['kind'] for item in narratives],['A','B','A','B','A'])
+        self.assertIn('自然人物节点',narratives[2]['decision_reason'])
+
+        no_node=[semantic(candidates[0],'hook')]+[
+            semantic(candidates[i],'event','城市街道') for i in range(1,4)]+[semantic(candidates[4],'summary')]
+        narratives,_=storyboard.build_timeline(candidates,no_node,15,100,rules)
+        self.assertEqual([item['kind'] for item in narratives],['A','B','B','B','A'])
 
     def test_only_b_to_a_waits_for_outgoing_word_release(self):
         items=[

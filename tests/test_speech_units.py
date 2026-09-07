@@ -35,3 +35,19 @@ class SpeechUnitTests(unittest.TestCase):
         self.assertEqual([s['text'] for s in result],punctuation_parts(text))
         self.assertEqual([s['end'] for s in result],[2.8,5.4,10.4])
         self.assertEqual(''.join(s['text'] for s in result),text)
+
+    def test_many_script_parts_with_one_usable_asr_word_never_overruns(self):
+        text='第一句。第二句！第三句？第四句；第五句。'
+        words=[{'start':.2,'end':4.8,'word':'第一句第二句第三句第四句第五句'}]
+        result=align_script_to_words(text,words,0,5)
+        self.assertEqual(result,[{'start':0.0,'end':5.0,'text':text}])
+        self.assertEqual(''.join(item['text'] for item in result),text)
+
+    def test_many_script_parts_with_two_words_merges_unmappable_tail(self):
+        text='甲。乙。丙。丁。戊。'
+        words=[{'start':.1,'end':1.5,'word':'甲乙'}, {'start':1.7,'end':4.8,'word':'丙丁戊'}]
+        result=align_script_to_words(text,words,0,5)
+        self.assertLessEqual(len(result),2)
+        self.assertEqual(result[-1]['end'],5)
+        self.assertEqual(''.join(item['text'] for item in result),text)
+        self.assertTrue(all(item['end']>item['start'] for item in result))

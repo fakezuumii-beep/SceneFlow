@@ -78,20 +78,31 @@ def align_script_to_words(text, words, audio_start=0.0, audio_end=None):
     char_ends=[];cursor=0
     for part in parts:
         cursor+=len(part);char_ends.append(cursor)
-    boundaries=[float(audio_start)]
+    final_end=float(audio_end if audio_end is not None else usable[-1]['end'])
+    cuts=[]
     previous_word=-1
-    for source_end in char_ends[:-1]:
+    for part_index,source_end in enumerate(char_ends[:-1]):
+        if previous_word>=len(usable)-2:break
         ref_position=sum(1 for original_index,_ in ref if original_index<source_end)-1
         nearest=min(mappings,key=lambda index:abs(index-ref_position))
         hyp_position=mappings[nearest];word_index=hyp[hyp_position][0]
-        word_index=max(previous_word+1,min(word_index,len(usable)-2))
-        boundaries.append(float(usable[word_index]['end']));previous_word=word_index
-    boundaries.append(float(audio_end if audio_end is not None else usable[-1]['end']))
-    result=[]
-    for part,start,end in zip(parts,boundaries,boundaries[1:]):
-        if end<=start:
-            if result:result[-1]['text']+=part
-            continue
-        result.append({'start':round(start,3),'end':round(end,3),'text':part})
+        word_index=min(len(usable)-2,max(previous_word+1,word_index))
+        cut_end=min(final_end,float(usable[word_index]['end']))
+        if cut_end>float(audio_start) and (not cuts or cut_end>cuts[-1][1]):
+            cuts.append((part_index,cut_end));previous_word=word_index
+    result=[];part_start=0;time_start=float(audio_start)
+    for part_end,time_end in cuts:
+        if time_end<=time_start:continue
+        result.append({'start':round(time_start,3),'end':round(time_end,3),
+                       'text':''.join(parts[part_start:part_end+1])})
+        part_start=part_end+1;time_start=time_end
+    remainder=''.join(parts[part_start:])
+    if remainder:
+        if final_end>time_start:
+            result.append({'start':round(time_start,3),'end':round(final_end,3),'text':remainder})
+        elif result:
+            result[-1]['text']+=remainder
+        else:
+            result=[{'start':float(audio_start),'end':final_end,'text':str(text)}]
     if ''.join(item['text'] for item in result)!=str(text):raise ValueError('原稿对齐未完整保留文字')
     return result

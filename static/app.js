@@ -1,6 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const state={project:null,projects:[],selected:null,panel:'setup',filter:'all',busy:false,polling:false,previewKey:'',pending:0,saving:Promise.resolve(),arollSupported:false,ttsStatus:null};
+const state={project:null,projects:[],selected:null,panel:'setup',filter:'all',inputMode:'text',busy:false,polling:false,previewKey:'',pending:0,saving:Promise.resolve(),arollSupported:false,ttsStatus:null};
 let previewAnimation=0;
 const voiceCatalog={
   'azure-v1':{
@@ -43,7 +43,7 @@ function updateVoiceOptions(preferred){
 }
 function updateTtsNotice(){
   const provider=$('#ttsProvider').value,info=state.ttsStatus?.providers?.[provider];
-  $('#ttsNotice').textContent=provider==='azure-v1'?(info?.ready===false?'Azure TTS V1 组件待安装，请重新运行「安装工作台.bat」。':'Azure TTS V1 · 默认联网配音，无需 Azure Key；原稿会发送到微软语音服务。'):(info?.ready?'Kokoro-82M · 本地备用已就绪。':'Kokoro-82M · 本地备用待安装，可在「连接与设置」安装。');
+  $('#ttsNotice').textContent=provider==='azure-v1'?(info?.ready===false?'Azure TTS V1 组件待安装，请重新运行「安装工作台.bat」。':'Azure TTS V1 · 默认联网配音，无需 Azure Key；生成后可直接下载，也可使用下方播放器试听。原稿会发送到微软语音服务。'):(info?.ready?'Kokoro-82M · 本地备用已就绪；生成后可直接下载，也可使用下方播放器试听。':'Kokoro-82M · 本地备用待安装，可在「连接与设置」安装。');
 }
 async function refreshProjects(){state.projects=await api('/projects');renderProjects()}
 function renderProjects(){
@@ -87,11 +87,23 @@ function renderAll(){
   $('#downloadSrt').classList.toggle('hidden',!p.segments.length);$('#downloadSrt').href='/api/projects/'+pid()+'/subtitles';
   renderPipeline();renderStatus();renderTimeline();renderShots();renderShotDetail();renderExports();setPanel(state.panel);syncPreview();
 }
+function runningPipelineStage(p){
+  const j=p?.job;if(j?.status!=='running')return -1;
+  const direct={tts:0,transcribe:0,plan:1,materials:2,aroll:2,render:3};
+  if(j.action!=='all')return direct[j.action]??-1;
+  const stage=String(j.stage||'');
+  if(['文字配音','本地转录','转录'].includes(stage))return 0;
+  if(['语义判断','规则剪辑'].includes(stage))return 1;
+  if(['匹配素材','A-roll 对口型'].includes(stage))return 2;
+  if(['合成视频','校验输出'].includes(stage))return 3;
+  return 0;
+}
 function renderPipeline(){
   const p=state.project,b=p.shots.filter(s=>s.kind==='B'),ready=b.filter(s=>s.asset).length,a=p.shots.filter(s=>s.kind==='A'),aReady=a.filter(s=>s.aroll_ready).length;
   $('#arollSummary').textContent=!state.arollSupported?'工作台更新待载入，已完成的口型视频会保留。':a.length?`MuseTalk 1.5 · ${aReady}/${a.length} 段口型已就绪`:'MuseTalk 1.5 · 分镜后按对应原音频生成口型';
   const stages=[['文字 / 音频',p.audio?fmt(p.duration)+' · 已就绪':'声音是故事的起点',!!p.audio],['理解与分镜',p.shots.length?`${p.narrative_segments?.length||0} 个叙事段 · ${p.shots.length} 个视觉镜头`:p.segments.length?`${p.segments.length} 个候选段 · 待判断`:'时间戳 · 语义分类',!!p.shots.length],['匹配画面',p.shots.length?`口型 ${aReady}/${a.length} · 素材 ${ready}/${b.length}`:'人物口型 · 场景素材',!!p.shots.length&&ready===b.length&&aReady===a.length],['导出成片',p.exports.some(e=>e.revision===p.revision)?'当前版本已导出':'预览 · 字幕 · MP4',p.exports.some(e=>e.revision===p.revision)]];
-  const next=stages.findIndex(s=>!s[2]);$('#pipeline').innerHTML=stages.map((s,i)=>`<div class="pipeline-step ${s[2]?'done':i===next?'current':''}"><span class="pipeline-number">${s[2]?'✓':String(i+1).padStart(2,'0')}</span><div><strong>${s[0]}</strong><small>${esc(s[1])}</small></div></div>`).join('');
+  const next=stages.findIndex(s=>!s[2]),running=runningPipelineStage(p);
+  $('#pipeline').innerHTML=stages.map((s,i)=>{const working=i===running;return `<div class="pipeline-step ${s[2]?'done':i===next?'current':''} ${working?'running':''}"><span class="pipeline-number">${s[2]?'✓':String(i+1).padStart(2,'0')}</span><div class="pipeline-copy"><strong>${s[0]}</strong><small>${esc(s[1])}</small></div>${working?`<span class="pipeline-worker" role="img" aria-label="${s[0]}正在运行"><img src="/pipeline-animations/step${i+1}-frame1.png" alt=""><img src="/pipeline-animations/step${i+1}-frame2.png" alt=""></span>`:''}</div>`}).join('');
 }
 function renderStatus(){
   const p=state.project,j=p.job;state.busy=j?.status==='running'||state.pending>0;
@@ -103,7 +115,12 @@ function renderStatus(){
   document.body.classList.toggle('busy',state.busy);
   const show=!!j;$('#statusbar').classList.toggle('hidden',!show);
   if(show){$('#statusbar').classList.toggle('error',['error','cancelled'].includes(j.status));$('#statusbar .status-message').textContent=j.message;$('#statusbar .progress i').style.width=j.progress+'%';$('#cancelJob').classList.toggle('hidden',j.status!=='running');$('#statusbar .progress').classList.toggle('hidden',j.status!=='running')}
-  $('#autoButton').disabled=!(p.audio||$('#scriptText').value.trim())||state.busy||!state.arollSupported;$('#exportButton').disabled=!p.shots.length||state.busy||!state.arollSupported;
+  const sourceReady=!!(p.audio||$('#scriptText').value.trim()),launchReady=sourceReady&&!state.busy&&state.arollSupported,launch=$('#quickLaunch');
+  launch.classList.toggle('pending',!launchReady);
+  if(state.busy){$('#quickLaunchStatus').textContent='正在处理中';$('#quickLaunchHelp').textContent=j?.message||'当前任务完成后即可继续。'}
+  else if(launchReady){$('#quickLaunchStatus').textContent='准备就绪后';$('#quickLaunchHelp').textContent='自动完成配音 / 转录、分镜、素材与口型'}
+  else{const missing=[];if(!sourceReady)missing.push('输入文稿或导入音频');if(!state.arollSupported)missing.push('重启工作台载入更新');$('#quickLaunchStatus').textContent='尚未准备就绪';$('#quickLaunchHelp').textContent='还差：'+missing.join('；')}
+  $('#autoButton').disabled=!sourceReady||state.busy||!state.arollSupported;$('#exportButton').disabled=!p.shots.length||state.busy||!state.arollSupported;
   $('#ttsButton').disabled=!$('#scriptText').value.trim()||state.busy||!state.arollSupported;
   $('#scriptText').disabled=state.busy;$('#installModels').disabled=state.busy;
   $('#transcribeButton').disabled=!p.audio||state.busy||!state.arollSupported;$('#planButton').disabled=!p.segments.length||state.busy||!state.arollSupported;$('#materialsButton').disabled=!p.shots.some(s=>s.kind==='B')||state.busy||!state.arollSupported;
@@ -111,7 +128,7 @@ function renderStatus(){
   $('#useHostMaterial').disabled=state.busy||!$('#hostMaterial').value;
   $('#resumeJob').classList.toggle('hidden',!['error','cancelled'].includes(j?.status));
   $('#resumeJob').disabled=state.busy||!state.arollSupported;
-  $('#playButton').disabled=!p.audio;$$('#shotPanel button, #shotPanel input, #shotPanel textarea, #setupPanel select, #ratio, #subtitlesToggle, #projectName, #audioUpload, #portraitUpload, #srtUpload').forEach(e=>e.disabled=state.busy);
+  $('#playButton').disabled=!p.audio;$$('#shotPanel button, #shotPanel input, #shotPanel textarea, #setupPanel select, #quickStart select, #ratio, #subtitlesToggle, #projectName, #audioUpload, #portraitUpload, #srtUpload').forEach(e=>e.disabled=state.busy);
 }
 function renderTimeline(){
   const p=state.project;$('#ruler').innerHTML=Array.from({length:6},(_,i)=>`<span>${fmt(p.duration*i/5)}</span>`).join('');
@@ -137,7 +154,7 @@ function renderShotDetail(){
   if(!s){root.innerHTML='<div class="panel-empty">选择一个分镜，<br>查看语义与素材详情。</div>';return}
   const i=p.shots.indexOf(s),video=s.asset&&/\.mp4$/i.test(s.asset),looped=s.source?.duration>0&&s.source.duration-(s.media_start||0)<s.end-s.start;
   const framing=[cameraLabel(s.camera),changeLabel(s.visual_change)].filter(Boolean).join(' · '),cut=s.cut_reason?`· 切点：${esc(s.cut_reason)}${Number.isFinite(s.cut_score)?` (${s.cut_score})`:''}`:'';
-  root.innerHTML=`<div class="eyebrow">VISUAL SHOT ${String(i+1).padStart(2,'0')}</div><h3 class="detail-title">${esc(s.title)}</h3><div class="detail-info">${fmt(s.start)} — ${fmt(s.end)} · ${(s.end-s.start).toFixed(2)} 秒${framing?' · '+esc(framing):''}</div><p class="source-note">语义：${esc(s.semantic_type||'—')} · B-roll 分数：${Number.isFinite(s.broll_score)?s.broll_score:'—'} · 可视化对象：${esc(s.visual_subject||'无')} ${cut}</p>${s.editorial_review?`<p class="help export-warning">${esc(s.editorial_review)}</p>`:''}<div class="detail-switch"><button class="button ${s.kind==='A'?'active':''}" data-kind="A">A-roll 人物</button><button class="button ${s.kind==='B'?'active':''}" data-kind="B">B-roll 素材</button></div><div class="detail-text">${esc(s.text)}</div><label class="detail-field">镜头标题<input id="shotTitle" value="${esc(s.title)}"></label><label class="detail-field">程序决策说明<textarea id="shotReason">${esc(s.reason)}</textarea></label><label class="detail-field">与下一镜头的交界（秒）<input id="shotEnd" type="number" step="0.01" value="${s.end}" ${i===p.shots.length-1?'disabled':''}></label><p class="source-note">修改交界会同时调整相邻镜头，总时长保持不变。</p>${s.kind==='B'?`<div class="divider"></div><label class="detail-field">素材检索词（每行一个）<textarea id="shotKeywords">${esc(s.keywords.join('\n'))}</textarea></label><p class="help">描述能看见的具体画面，例如 “old library books”。修改后可重新搜索候选。</p><button id="searchShot" class="button wide">搜索候选素材</button><label class="button wide">导入本地视频 / 图片<input id="localBroll" type="file" accept="video/*,image/png,image/jpeg,image/webp" hidden></label>${video?`<label class="detail-field">素材入点（秒）<input id="mediaStart" type="number" step="0.1" min="0" value="${s.media_start||0}"></label>`:''}${!s.asset?`<p class="export-warning help">尚未匹配素材，预览与导出暂用人物图。${esc(s.material_error||'')}</p>`:''}${looped?'<p class="help export-warning">此素材短于镜头时长，成片会循环使用该片段。</p>':''}${s.source?`<p class="source-note">当前素材：${esc(s.source.provider)} · ${esc(s.source.author||s.source.name||'')} ${safeURL(s.source.page)?`<a class="source-link" href="${esc(s.source.page)}" target="_blank" rel="noreferrer">来源 ↗</a>`:''}</p>`:''}<div id="candidates">${s.candidates.slice().sort((a,b)=>Number(b.id===s.source?.id)-Number(a.id===s.source?.id)).slice(0,3).map(c=>`<div class="candidate">${safeURL(c.thumbnail)?`<img src="${esc(c.thumbnail)}" alt="${esc(c.query)}" loading="lazy" referrerpolicy="no-referrer">`:''}<div class="candidate-info"><small>${esc(c.provider)} · ${c.duration} 秒 · ${c.width}×${c.height}</small><small>${esc(c.author)} / ${esc(c.query)}</small><a href="${esc(safeURL(c.page))}" class="source-link" target="_blank" rel="noreferrer">查看素材来源 ↗</a><button class="button" data-candidate="${esc(c.id)}">${s.source?.id===c.id?'✓ 当前使用':'选用这个素材'}</button></div></div>`).join('')}</div>`:`<div class="divider"></div><p class="help">MuseTalk 1.5 · ${s.aroll_ready?'口型已生成，预览和导出使用这段视频。':(hostIsVideo()?'口型尚未生成或输入已变化，当前预览为原循环视频。导出前会自动生成口型。':'口型尚未生成或输入已变化，当前预览暂用人物图。导出前会自动生成。')}</p>${s.aroll_error?`<p class="help export-warning">${esc(s.aroll_error)}</p>`:''}<button id="generateShotAroll" class="button wide">${s.aroll_ready?'重新生成这一镜口型':'生成这一镜口型'}</button><p class="help">只使用 ${fmt(s.start)}–${fmt(s.end)} 的对应原音频。已生成的历史视频会保留。</p>`}`;
+  root.innerHTML=`<div class="eyebrow">VISUAL SHOT ${String(i+1).padStart(2,'0')}</div><h3 class="detail-title">${esc(s.title)}</h3><div class="detail-info">${fmt(s.start)} — ${fmt(s.end)} · ${(s.end-s.start).toFixed(2)} 秒${framing?' · '+esc(framing):''}</div><p class="source-note">语义：${esc(s.semantic_type||'—')} · 视觉价值：${Number.isFinite(s.visual_value)?s.visual_value:'—'} · 人物价值：${Number.isFinite(s.host_value)?s.host_value:'—'} · 可视化对象：${esc(s.visual_subject||'无')} ${cut}</p>${s.editorial_review?`<p class="help export-warning">${esc(s.editorial_review)}</p>`:''}<div class="detail-switch"><button class="button ${s.kind==='A'?'active':''}" data-kind="A">A-roll 人物</button><button class="button ${s.kind==='B'?'active':''}" data-kind="B">B-roll 素材</button></div><div class="detail-text">${esc(s.text)}</div><label class="detail-field">镜头标题<input id="shotTitle" value="${esc(s.title)}"></label><label class="detail-field">程序决策说明<textarea id="shotReason">${esc(s.reason)}</textarea></label><label class="detail-field">与下一镜头的交界（秒）<input id="shotEnd" type="number" step="0.01" value="${s.end}" ${i===p.shots.length-1?'disabled':''}></label><p class="source-note">修改交界会同时调整相邻镜头，总时长保持不变。</p>${s.kind==='B'?`<div class="divider"></div><label class="detail-field">素材检索词（每行一个）<textarea id="shotKeywords">${esc(s.keywords.join('\n'))}</textarea></label><p class="help">描述能看见的具体画面，例如 “old library books”。修改后可重新搜索候选。</p><button id="searchShot" class="button wide">搜索候选素材</button><label class="button wide">导入本地视频 / 图片<input id="localBroll" type="file" accept="video/*,image/png,image/jpeg,image/webp" hidden></label>${video?`<label class="detail-field">素材入点（秒）<input id="mediaStart" type="number" step="0.1" min="0" value="${s.media_start||0}"></label>`:''}${!s.asset?`<p class="export-warning help">尚未匹配素材，预览与导出暂用人物图。${esc(s.material_error||'')}</p>`:''}${looped?'<p class="help export-warning">此素材短于镜头时长，成片会循环使用该片段。</p>':''}${s.source?`<p class="source-note">当前素材：${esc(s.source.provider)} · ${esc(s.source.author||s.source.name||'')} ${safeURL(s.source.page)?`<a class="source-link" href="${esc(s.source.page)}" target="_blank" rel="noreferrer">来源 ↗</a>`:''}</p>`:''}<div id="candidates">${s.candidates.slice().sort((a,b)=>Number(b.id===s.source?.id)-Number(a.id===s.source?.id)).slice(0,3).map(c=>`<div class="candidate">${safeURL(c.thumbnail)?`<img src="${esc(c.thumbnail)}" alt="${esc(c.query)}" loading="lazy" referrerpolicy="no-referrer">`:''}<div class="candidate-info"><small>${esc(c.provider)} · ${c.duration} 秒 · ${c.width}×${c.height}</small><small>${esc(c.author)} / ${esc(c.query)}</small><a href="${esc(safeURL(c.page))}" class="source-link" target="_blank" rel="noreferrer">查看素材来源 ↗</a><button class="button" data-candidate="${esc(c.id)}">${s.source?.id===c.id?'✓ 当前使用':'选用这个素材'}</button></div></div>`).join('')}</div>`:`<div class="divider"></div><p class="help">MuseTalk 1.5 · ${s.aroll_ready?'口型已生成，预览和导出使用这段视频。':(hostIsVideo()?'口型尚未生成或输入已变化，当前预览为原循环视频。导出前会自动生成口型。':'口型尚未生成或输入已变化，当前预览暂用人物图。导出前会自动生成。')}</p>${s.aroll_error?`<p class="help export-warning">${esc(s.aroll_error)}</p>`:''}<button id="generateShotAroll" class="button wide">${s.aroll_ready?'重新生成这一镜口型':'生成这一镜口型'}</button><p class="help">只使用 ${fmt(s.start)}–${fmt(s.end)} 的对应原音频。已生成的历史视频会保留。</p>`}`;
   $$('[data-kind]').forEach(b=>b.onclick=()=>patchShot({kind:b.dataset.kind}));
   $('#shotTitle').onchange=e=>patchShot({title:e.target.value});$('#shotReason').onchange=e=>patchShot({reason:e.target.value});$('#shotEnd').onchange=e=>patchShot({end:Number(e.target.value)});
   if(s.kind==='B'){
@@ -162,7 +179,7 @@ async function patchShot(body){
   });
 }
 function renderExports(){
-  const p=state.project;$('#exportsPanel').innerHTML='<h3 class="detail-title">成片与交付文件</h3><p class="help">每次导出单独保留。修改分镜后，已有成片不会自动更新。</p>'+(p.exports.length?p.exports.slice().reverse().map(e=>`<div class="export-card"><strong>${new Date(e.created_at*1000).toLocaleString('zh-CN')}</strong><p>${esc(e.size)} · ${fmt(e.duration)} · ${e.revision===p.revision?'当前版本':'历史版本'}</p>${e.fallbacks?`<p class="export-warning">${e.fallbacks} 段 B-roll 使用人物图占位</p>`:''}${e.looped?`<p class="help">${e.looped} 段素材循环播放</p>`:''}<a href="${media(e.file)}" target="_blank" class="button">播放成片 ↗</a> <a href="${media(e.file)}" download="${esc(p.name)}.mp4" class="button">下载 MP4</a><p><a class="source-link" href="${media(e.file.replace('podcast.mp4','subtitles.srt'))}" download>字幕 SRT</a> · <a class="source-link" href="${media(e.file.replace('podcast.mp4','manifest.json'))}" download>镜头与来源清单</a></p></div>`).join(''):'<div class="panel-empty">还没有导出的成片。<br>完成分镜后，点击右上角「导出视频」。</div>');
+  const p=state.project;$('#exportsPanel').innerHTML='<h3 class="detail-title">成片与交付文件</h3><p class="help">每次导出单独保留。修改分镜后，已有成片不会自动更新。</p>'+(p.exports.length?p.exports.slice().reverse().map(e=>`<div class="export-card"><strong>${new Date(e.created_at*1000).toLocaleString('zh-CN')}</strong><p>${esc(e.size)} · ${fmt(e.duration)} · ${e.revision===p.revision?'当前版本':'历史版本'}</p>${e.fallbacks?`<p class="export-warning">${e.fallbacks} 段 B-roll 使用人物图占位</p>`:''}${e.looped?`<p class="help">${e.looped} 段素材循环播放</p>`:''}<a href="${media(e.file)}" target="_blank" class="button">播放成片 ↗</a> <a href="${media(e.file)}" download="${esc(p.name)}.mp4" class="button">下载 MP4</a><p><a class="source-link" href="${media(e.file.replace('podcast.mp4','subtitles.srt'))}" download>字幕 SRT</a> · <a class="source-link" href="${media(e.file.replace('podcast.mp4','manifest.json'))}" download>镜头与来源清单</a></p></div>`).join(''):'<div class="panel-empty">还没有导出的成片。<br>完成分镜后，在「制作设置」底部点击「导出视频」。</div>');
 }
 function seek(t){const audio=$('#audioPlayer');if(!state.project?.audio)return;audio.currentTime=Math.min(Math.max(0,t),state.project.duration);syncPreview(true)}
 function syncPreview(force=false){
@@ -232,7 +249,7 @@ async function poll(){
     const p=await api('/projects/'+pid()),old=state.project,changed=JSON.stringify(p.job)!==JSON.stringify(old.job);
     if(state.project.id!==p.id)return;
     if(changed){
-      if(p.job?.status==='running'){state.project.job=p.job;renderStatus()}
+      if(p.job?.status==='running'){state.project.job=p.job;renderStatus();renderPipeline()}
       else if(document.activeElement?.matches('input,textarea,select')&&!state.busy){/* Do not replace an active editor. */}
       else{state.project=p;renderAll();await refreshProjects();if(old.job?.status==='running')toast(p.job.message)}
     }
@@ -262,20 +279,27 @@ $('#playButton').onclick=()=>guarded(async()=>{const a=$('#audioPlayer');if(a.pa
 $('#muteButton').onclick=()=>{const a=$('#audioPlayer');a.muted=!a.muted;$('#muteButton').textContent=a.muted?'×':'♪'};
 $('#scrubber').oninput=e=>seek(Number(e.target.value));
 ['timeupdate','play','pause','ended','seeked'].forEach(event=>$('#audioPlayer').addEventListener(event,()=>{syncPreview(event==='seeked');if(event==='play')startPreviewAnimation()}));
-$('#settingsButton').onclick=()=>guarded(async()=>{
+async function openGlobalApiSettings(){
   const s=await api('/settings'),form=$('#settingsForm');
   for(const k of ['llm_base_url','llm_model','asr_model','asr_device','aroll_batch_size'])form.elements[k].value=s[k];
-  for(const k of ['llm_api_key','pexels_api_key','pixabay_api_key']){form.elements[k].value='';form.elements[k].placeholder=s[k+'_configured']?'已配置 · 留空保留':'尚未配置'}
-  $('#connectionStatus').textContent=`${s.origin}。语义模型：${s.llm_api_key_configured?'已配置':'未配置密钥'}；Pexels：${s.pexels_api_key_configured?'已配置':'未配置'}；本地模型：${s.cached_models.join(' / ')||'未发现'}。`;
+  for(const k of ['llm_api_key','pexels_api_key','pixabay_api_key']){form.elements[k].value='';form.elements[k].placeholder=s[k+'_configured']?'••••••••••••':'尚未配置'}
+  $('#connectionStatus').textContent=`全局配置 · DeepSeek：${s.llm_api_key_configured?'已配置':'未配置 Key'}；Pexels：${s.pexels_api_key_configured?'已配置':'未配置 Key'}。`;
   await refreshLocalModels();$('#settingsDialog').showModal();
-});
-$('#settingsForm').onsubmit=e=>{e.preventDefault();guarded(async()=>{const form=e.target,body=Object.fromEntries(new FormData(form));await api('/settings',{method:'PUT',body:JSON.stringify(body)});$('#settingsDialog').close();toast('连接设置已保存')})};
+}
+$('#globalApiButton').onclick=()=>guarded(openGlobalApiSettings);
+$('#settingsButton').onclick=()=>guarded(openGlobalApiSettings);
+$('#settingsForm').onsubmit=e=>{e.preventDefault();guarded(async()=>{const form=e.target,body=Object.fromEntries(new FormData(form));await api('/settings',{method:'PUT',body:JSON.stringify(body)});$('#settingsDialog').close();toast('全局 API 配置已保存')})};
 function readDraft(id){try{return JSON.parse(localStorage.getItem('solo-script-'+id)||'null')}catch{return null}}
 function scriptValue(){return {text:$('#scriptText').value,provider:$('#ttsProvider').value,speaker:$('#ttsSpeaker').value,language:$('#ttsLanguage').value,speed:Number($('#ttsSpeed').value)}}
 function rememberScript(){if(state.project)localStorage.setItem('solo-script-'+pid(),JSON.stringify(scriptValue()))}
 function setInputMode(mode){
-  $$('#setupPanel [data-input]').forEach(b=>b.classList.toggle('active',b.dataset.input===mode));
+  state.inputMode=mode;
+  $$('[data-input]').forEach(b=>{const active=b.dataset.input===mode;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))});
   $('#textInputPanel').classList.toggle('hidden',mode!=='text');$('#audioInputPanel').classList.toggle('hidden',mode!=='audio');
+  const textMode=mode==='text';
+  $('#previewStartKicker').textContent=textMode?'01 — YOUR WORDS, YOUR STORY':'01 — YOUR VOICE, YOUR STORY';
+  $('#previewStartTitle').textContent=textMode?'从一段文字开始。':'从一个声音开始。';
+  $('#previewStartHelp').textContent=textMode?'输入文稿并选择声音，让每段表达都有合适的画面。':'导入一段音频，让每段表达都有合适的画面。';
 }
 function flushScript(){
   if(!state.project||state.busy)return state.saving;
@@ -292,7 +316,7 @@ function flushScript(){
   return state.saving;
 }
 $$('[data-input]').forEach(b=>b.onclick=()=>{localStorage.setItem('solo-input-'+pid(),b.dataset.input);setInputMode(b.dataset.input)});
-$('#scriptText').oninput=()=>{rememberScript();$('#ttsButton').disabled=!$('#scriptText').value.trim()||state.busy;$('#autoButton').disabled=!(state.project.audio||$('#scriptText').value.trim())||state.busy};
+$('#scriptText').oninput=()=>{rememberScript();renderStatus()};
 $('#scriptText').onblur=()=>guarded(flushScript);
 $('#ttsProvider').onchange=()=>{updateVoiceOptions();updateTtsNotice();rememberScript();guarded(flushScript)};
 $('#ttsLanguage').onchange=()=>{updateVoiceOptions();rememberScript();guarded(flushScript)};

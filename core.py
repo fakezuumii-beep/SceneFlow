@@ -587,108 +587,6 @@ def validate_aroll_duration(groups, units, duration, limit):
             raise ValueError(f'A-roll {g["from"]}–{g["to"]} 连续 {end-start:.3f} 秒，超过 {limit} 秒上限；请用相关 B-roll 承接部分内容，不能拆成相邻 A')
 
 
-def max_kind_run_duration(groups, units, duration, kind):
-    """Measure consecutive screen time for A or B across semantic group seams."""
-    maximum=current=0.0
-    for g in groups:
-        start,end=group_bounds(g,units,duration)
-        if g['kind']==kind:
-            current=round(current+end-start,3);maximum=max(maximum,current)
-        else:
-            current=0.0
-    return round(maximum,3)
-
-
-def rebalance_long_broll_runs(groups, units, duration, limit=12, min_aroll=5, max_aroll=10):
-    """Bring the host back during long B sequences at natural sentence boundaries."""
-    by_id={u['id']:i for i,u in enumerate(units)}
-    items=[]
-    for source_index,g in enumerate(groups):
-        for unit_id in range(g['from'],g['to']+1):
-            item=copy.deepcopy(g);item['from']=item['to']=unit_id
-            item['_source_index']=source_index;item['_inserted_aroll']=False;item['_inserted_broll']=False
-            items.append(item)
-
-    def span_seconds(first,last):
-        first_pos=by_id[items[first]['from']];last_pos=by_id[items[last]['to']]
-        start=0 if first_pos==0 else units[first_pos]['start']
-        end=duration if last_pos==len(units)-1 else units[last_pos+1]['start']
-        return round(end-start,3)
-
-    def kind_runs(kinds,kind):
-        found=[];index=0
-        while index<len(kinds):
-            if kinds[index]!=kind: index+=1;continue
-            end=index
-            while end+1<len(kinds) and kinds[end+1]==kind: end+=1
-            found.append((index,end,span_seconds(index,end)));index=end+1
-        return found
-
-    # Search globally because a tight B run can sit between two nearly-full A
-    # runs. In that case swap one neighboring phrase to B before returning the
-    # host, rather than accepting either a 12+ second B run or an overlong A run.
-    for _ in range(len(items)):
-        kinds=[item['kind'] for item in items]
-        b_runs=kind_runs(kinds,'B')
-        base_excess=sum(max(0,seconds-limit) for _,_,seconds in b_runs)
-        if base_excess<=0: break
-        candidates=[]
-        for run_start,run_end,seconds in b_runs:
-            if seconds<=limit: continue
-            for a_start in range(run_start,run_end+1):
-                for a_end in range(a_start,run_end+1):
-                    a_seconds=span_seconds(a_start,a_end)
-                    if a_seconds>max_aroll: break
-                    neighbors=[]
-                    if a_start>0 and kinds[a_start-1]=='A' and a_start-1!=0: neighbors.append(a_start-1)
-                    if a_end+1<len(items) and kinds[a_end+1]=='A' and a_end+1!=len(items)-1: neighbors.append(a_end+1)
-                    variants=[()]+[(n,) for n in neighbors]
-                    if len(neighbors)==2: variants.append(tuple(neighbors))
-                    for flips in variants:
-                        trial=kinds[:];trial[a_start:a_end+1]=['A']*(a_end-a_start+1)
-                        for position in flips: trial[position]='B'
-                        if any(run_seconds>max_aroll for _,_,run_seconds in kind_runs(trial,'A')): continue
-                        trial_b=kind_runs(trial,'B')
-                        excess=sum(max(0,run_seconds-limit) for _,_,run_seconds in trial_b)
-                        if excess>=base_excess: continue
-                        affected=range(max(0,run_start-1),min(len(items),run_end+2))
-                        if any(run_seconds<2 and any(pos in affected for pos in range(first,last+1))
-                               for first,last,run_seconds in trial_b): continue
-                        score=excess*100+len(flips)*4+abs(a_seconds-7)+(0 if a_seconds>=min_aroll else 8)
-                        candidates.append((score,trial,a_start,a_end,flips))
-        if not candidates: break  # Only possible when one indivisible phrase exceeds both limits.
-        _,trial,a_start,a_end,flips=min(candidates,key=lambda item:item[0])
-        for position,(old,new) in enumerate(zip(kinds,trial)):
-            if old==new: continue
-            items[position]['kind']=new
-            if new=='A':
-                items[position]['keywords']=[];items[position]['title']='人物回场'
-                items[position]['reason']='连续 B-roll 已达上限，在自然句子边界回到人物，保持节目主体感。'
-                items[position]['_inserted_aroll']=True
-            else:
-                unit=units[by_id[items[position]['from']]]
-                title,keywords=_fallback_broll_metadata([unit])
-                items[position]['title']=title;items[position]['keywords']=keywords
-                items[position]['reason']='为避免相邻人物段合并超时，将相邻短语改由相关 B-roll 承接。'
-                items[position]['_inserted_broll']=True
-
-    output=[]
-    for item in items:
-        can_merge=(output and output[-1]['kind']==item['kind'] and output[-1]['to']+1==item['from']
-                   and (item['kind']=='A' or output[-1]['_source_index']==item['_source_index']))
-        if can_merge:
-            output[-1]['to']=item['to']
-            if item['_inserted_aroll']:
-                output[-1]['title']=item['title'];output[-1]['reason']=item['reason'];output[-1]['_inserted_aroll']=True
-        else:
-            output.append(copy.deepcopy(item))
-    for item in output:
-        item.pop('_source_index',None);item.pop('_inserted_aroll',None);item.pop('_inserted_broll',None)
-    output=validate_plan(output,units)
-    validate_aroll_duration(output,units,duration,max_aroll)
-    return output
-
-
 def _ensure_anchor_aroll(groups):
     """Keep the host on camera at both editorial anchors."""
     output=copy.deepcopy(groups)
@@ -769,18 +667,18 @@ visual_subject 写这一段明确、可看见、可搜索的主体；没有具�
             except (ValueError,KeyError) as exc:
                 last_error=exc;messages.append({'role':'user','content':'上次语义字段未通过校验：'+str(exc)+'。只修正并返回全部 segments；不要增加任何剪辑字段。'})
         if last_error:raise last_error
-    progress(pid,'规则剪辑',84,'正在按真实音频时间合并短段、计算 A/B 分数与视觉镜头')
+    progress(pid,'规则剪辑',84,'正在按真实音频时间合并短段、计算双价值与视觉镜头')
     silences=audio_silences(asset_path(pid,p['audio']),rules) if p.get('audio') else []
     narratives,shots=sb.build_timeline(candidates,semantics,p['duration'],p['options']['broll_ratio'],rules,silences)
     validate_timeline(shots,p['duration'])
     b_seconds=sum(s['end']-s['start'] for s in shots if s['kind']=='B')
     with LOCK:
         p=read_project(pid);p['candidate_segments']=copy.deepcopy(candidates);p['narrative_segments']=narratives;p['shots']=shots;p['revision']+=1
-        p['analysis']={'mode':'semantic-score-rules','model':cfg['llm_model'],'backend':'deepseek-api','rules_version':rules['version'],
+        p['analysis']={'mode':'semantic-dual-value-rules','model':cfg['llm_model'],'backend':'deepseek-api','rules_version':rules['version'],
                        'llm_role':'semantic_classification_only','candidate_count':len(candidates),'narrative_count':len(narratives),
                        'visual_shot_count':len(shots),'broll_ratio_actual':round(100*b_seconds/max(p['duration'],.001),1),
                        'rules_file':'storyboard_rules.json',
-                       'message':'LLM 只做语义判断；内容分 0–2 的可选段按全片 A/B 比例决定，短句合并按实际时长加权；B→A 按真实静音谷保护末字收音'}
+                       'message':'LLM 只做语义判断；程序按 visual_value / host_value 与全片比例统一选择 A/B，短句合并保留子语义；长 B-roll 只在高人物价值的自然节点回场；B→A 按真实静音谷保护末字收音'}
         save_project(p)
 
 def public_page(url):

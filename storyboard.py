@@ -24,7 +24,8 @@ FORBIDDEN_LLM_FIELDS = {
 
 def load_rules(path=RULES_PATH):
     rules=json.loads(Path(path).read_text(encoding='utf-8'))
-    required=('version','semantic_types','scores','thresholds','durations','ratio_soft_target','camera_choices','aroll_variation')
+    required=('version','semantic_types','importance_values','emotion_values','values','selection',
+              'host_return','durations','anchors','directional_cuts','camera_choices','aroll_variation')
     if any(key not in rules for key in required):raise ValueError('分镜规则配置不完整')
     if len(set(rules['semantic_types']))!=len(rules['semantic_types']):raise ValueError('分镜语义类型配置重复')
     if not rules['camera_choices']:raise ValueError('A-roll 景别配置不能为空')
@@ -53,11 +54,12 @@ def validate_semantic_response(payload, candidates, rules):
         if semantic not in rules['semantic_types']:raise ValueError('模型返回了未配置的 semantic_type')
         if importance not in rules.get('importance_values',['low','normal','high']):raise ValueError('模型返回了无效 importance')
         if emotion not in rules.get('emotion_values',['neutral']):raise ValueError('模型返回了无效 emotion')
+        visual_subject=str(item.get('visual_subject','')).strip()[:160]
         output.append({
             'id':item_id,
             'text':str(expected['text']).strip(),
             'semantic_type':semantic,
-            'visual_subject':str(item.get('visual_subject','')).strip()[:160],
+            'visual_subject':visual_subject if searchable_visual_subject(visual_subject) else '',
             'importance':importance,
             'emotion':emotion,
         })
@@ -73,77 +75,138 @@ def timeline_bounds(index, candidates, duration):
 def searchable_visual_subject(value):
     text=re.sub(r'\s+',' ',str(value or '')).strip()
     if len(re.sub(r'[^\w\u3400-\u9fff]','',text))<2:return False
-    blocked=('无','没有','不适用','抽象','观点','情绪','总结','转折','主持人','说话的人','none','n/a','abstract')
-    return text.lower() not in blocked
+    normalized=re.sub(r'[\s\W_]+','',text.lower())
+    exact={'无','没有','不适用','无明确主体','没有明确主体','无具体主体','无可视化对象',
+           '没有具体可视化对象','抽象','抽象观点','抽象概念','观点','情绪','总结','转折',
+           '主持人','说话的人','none','na','notapplicable','abstract','abstractopinion',
+           'noconcretevisualsubject','noclearvisualsubject'}
+    if normalized in exact:return False
+    blocked_phrases=('没有具体可视化对象','无具体可视化对象','没有明确可视化对象','无明确可视化对象',
+                     '没有明确主体','无明确主体','没有具体主体','无具体主体','不适用','抽象观点',
+                     '抽象概念','无法可视化','无可视化内容','没有可视化内容','noconcretevisual',
+                     'noclearvisual','nospecificvisual','notapplicable','abstractopinion')
+    if any(phrase in normalized for phrase in blocked_phrases):return False
+    if re.match(r'^(没有|无)(具体|明确)?的?(可视化)?(对象|主体|画面|内容|元素)',normalized):return False
+    return True
 
 
-def score_candidate(item, rules):
-    """Return a content-only B-roll suitability score.
-
-    Local A/B run length must never change this score.  Rhythm and the requested
-    episode-wide ratio are applied later, so a concrete visual such as a sunset
-    cannot become "less visual" merely because several B shots precede it.
-    """
-    scores=rules['scores'];base=float(scores['semantic_type'].get(item['semantic_type'],0));parts=[{'rule':'semantic_type','value':base}]
+def value_candidate(item, rules):
+    """Return independent content values for B-roll visuals and host presence."""
+    values=rules['values']
+    visual=float(values['visual_semantic_type'].get(item['semantic_type'],0))
+    visual_parts=[{'rule':'semantic_type','value':visual}]
     if searchable_visual_subject(item.get('visual_subject')):
-        value=float(scores['searchable_visual_subject']);base+=value;parts.append({'rule':'visual_subject','value':value})
-    return round(base,3),parts
+        value=float(values['searchable_visual_subject']);visual+=value
+        visual_parts.append({'rule':'visual_subject','value':value})
+    semantic_host=float(values['host_semantic_type'].get(item['semantic_type'],0))
+    importance=float(values['importance_host'][item['importance']])
+    emotion=float(values['emotion_host'][item['emotion']])
+    host=semantic_host+importance+emotion
+    host_parts=[{'rule':'semantic_type','value':semantic_host},
+                {'rule':'importance','value':importance},{'rule':'emotion','value':emotion}]
+    return (round(visual,3),round(host,3),visual_parts,host_parts)
+
+
+def _optional_identity(item):
+    ids=','.join(str(value) for value in item.get('candidate_ids',[]))
+    return ids+'|'+str(item.get('text',''))
+
+
+def _choose_optional_broll(output, optional, needed_seconds, rules):
+    """Choose an episode-wide subset closest to target, then prefer visual value.
+
+    Dynamic programming is quantized only for subset search.  The winning ratio
+    and every reported duration continue to use the original audio timestamps.
+    Sorting by semantic value and stable identity removes appearance-order bias.
+    """
+    if not optional or needed_seconds<=0:return set()
+    quantum=max(.01,float(rules['selection']['ratio_quantum_seconds']))
+    ranked=sorted(optional,key=lambda index:(
+        -(float(output[index]['visual_value'])-float(output[index]['host_value'])),
+        -float(output[index]['visual_value']),float(output[index]['host_value']),
+        _optional_identity(output[index])))
+    durations=[max(1,round(float(output[index]['duration'])/quantum)) for index in ranked]
+    target=max(0,round(float(needed_seconds)/quantum))
+    limit=target+(max(durations) if durations else 0)
+    # tick -> ((visual-host gain, visual gain, negative host cost), bit mask)
+    states={0:((0.0,0.0,0.0),0)}
+    for rank,(index,ticks) in enumerate(zip(ranked,durations)):
+        item=output[index];seconds=float(item['duration'])
+        contribution=((float(item['visual_value'])-float(item['host_value']))*seconds,
+                      float(item['visual_value'])*seconds,-float(item['host_value'])*seconds)
+        additions={}
+        for total,(quality,mask) in states.items():
+            combined=total+ticks
+            if combined>limit:continue
+            candidate=(tuple(a+b for a,b in zip(quality,contribution)),mask|(1<<rank))
+            previous=additions.get(combined) or states.get(combined)
+            if previous is None or candidate[0]>previous[0] or (candidate[0]==previous[0] and candidate[1]<previous[1]):
+                additions[combined]=candidate
+        for total,candidate in additions.items():
+            previous=states.get(total)
+            if previous is None or candidate[0]>previous[0] or (candidate[0]==previous[0] and candidate[1]<previous[1]):
+                states[total]=candidate
+    winning_total,(quality,mask)=min(states.items(),key=lambda entry:(
+        abs(entry[0]-target),-entry[1][0][0],-entry[1][0][1],-entry[1][0][2],entry[0],entry[1][1]))
+    return {index for rank,index in enumerate(ranked) if mask&(1<<rank)}
 
 
 def _assign_kinds_by_ratio(items, duration, target_ratio, rules):
-    """Assign A/B without adding rhythm points to the content score.
-
-    Scores below the optional band are definite A, scores above it are definite
-    B, and scores from 0 through 2 are allocated only by the whole-episode
-    B-roll ratio.  Definite B seconds across the complete episode are counted
-    before any optional item is decided, avoiding a local running-ratio bias.
-    """
-    output=copy.deepcopy(items);threshold=rules['thresholds']
-    optional_min=float(threshold['optional_min']);optional_max=float(threshold['optional_max'])
+    """Assign A/B from dual values plus one episode-wide ratio optimization."""
+    output=copy.deepcopy(items);selection=rules['selection']
+    definite_b=float(selection['definite_b_advantage']);definite_a=float(selection['definite_a_advantage'])
     target=max(0.0,min(100.0,float(target_ratio)));episode=max(float(duration),.001)
     opening=bool(rules.get('anchors',{}).get('opening_aroll'))
     closing=bool(rules.get('anchors',{}).get('closing_aroll'))
     optional=[]
     for index,item in enumerate(output):
-        score=float(item['broll_score']);anchor=(index==0 and opening) or (index==len(output)-1 and closing)
+        visual=float(item['visual_value']);host=float(item['host_value']);advantage=round(visual-host,3)
+        item['value_advantage']=advantage
+        anchor=(index==0 and opening) or (index==len(output)-1 and closing)
         if anchor:
             item['kind']='A';item['decision_reason']='程序开场锚点保留人物' if index==0 else '程序结尾锚点回到人物'
-        elif score<optional_min:
-            item['kind']='A';item['decision_reason']=f'内容分 {score:g} 低于 0，判为 A-roll'
-        elif score>optional_max:
-            item['kind']='B';item['decision_reason']=f'内容分 {score:g} 高于 2，判为 B-roll'
+        elif advantage<=definite_a:
+            item['kind']='A';item['decision_reason']=f'视觉价值 {visual:g} / 人物价值 {host:g}，人物优势明确，判为 A-roll'
+        elif advantage>=definite_b:
+            item['kind']='B';item['decision_reason']=f'视觉价值 {visual:g} / 人物价值 {host:g}，画面优势明确，判为 B-roll'
         else:
             item['kind']=None;optional.append(index)
     b_seconds=sum(float(item['duration']) for item in output if item['kind']=='B')
+    selected=_choose_optional_broll(output,optional,episode*target/100-b_seconds,rules)
     for index in optional:
-        item=output[index];ratio=100*b_seconds/episode
-        if ratio<target:
-            item['kind']='B';b_seconds+=float(item['duration'])
-            after=100*b_seconds/episode
-            item['decision_reason']=f'内容分 {float(item["broll_score"]):g} 进入 0–2 可选区；全片 B-roll {ratio:.1f}% 未达 {target:g}% 目标，选择 B-roll（加入后 {after:.1f}%）'
-        else:
-            item['kind']='A'
-            item['decision_reason']=f'内容分 {float(item["broll_score"]):g} 进入 0–2 可选区；全片 B-roll {ratio:.1f}% 已达 {target:g}% 目标，选择 A-roll'
+        item=output[index];item['kind']='B' if index in selected else 'A'
+        if index in selected:b_seconds+=float(item['duration'])
+    final_ratio=100*b_seconds/episode
+    for index in optional:
+        item=output[index]
+        item['decision_reason']=(f'视觉价值 {float(item["visual_value"]):g} / 人物价值 {float(item["host_value"]):g}，'
+                                 f'进入全片候选池；为接近 B-roll {target:g}% 目标（分配后 {final_ratio:.1f}%），'
+                                 f'选择 {item["kind"]}-roll')
     return output
 
 
-def classify_candidates(candidates, semantics, duration, target_ratio, rules):
+def classify_candidates(candidates, semantics, duration, target_ratio, rules, assign=True):
     result=[]
     for index,(candidate,semantic) in enumerate(zip(candidates,semantics)):
         start,end=timeline_bounds(index,candidates,duration);seconds=round(end-start,3)
-        score,breakdown=score_candidate(semantic,rules)
+        visual,host,visual_breakdown,host_breakdown=value_candidate(semantic,rules)
         item={**copy.deepcopy(semantic),'candidate_ids':[candidate['id']],
-              'start':start,'end':end,'duration':seconds,'broll_score':score,
-              'score_breakdown':breakdown,
-              'score_weighting':[{'candidate_ids':[candidate['id']],'duration':seconds,'score':score,
-                                  'score_breakdown':copy.deepcopy(breakdown)}]}
+              'start':start,'end':end,'duration':seconds,
+              'visual_value':visual,'host_value':host,
+              'visual_value_breakdown':visual_breakdown,'host_value_breakdown':host_breakdown,
+              'value_weighting':[{'candidate_ids':[candidate['id']],'duration':seconds,
+                                  'visual_value':visual,'host_value':host,
+                                  'visual_value_breakdown':copy.deepcopy(visual_breakdown),
+                                  'host_value_breakdown':copy.deepcopy(host_breakdown)}]}
         result.append(item)
-    return _assign_kinds_by_ratio(result,duration,target_ratio,rules)
+    return _assign_kinds_by_ratio(result,duration,target_ratio,rules) if assign else result
 
 
 def _merge_cost(short, neighbor, combined_seconds, rules):
     cost=0.0
-    if short['kind']==neighbor['kind']:cost-=5
+    short_side=math.copysign(1,float(short['visual_value'])-float(short['host_value']))
+    neighbor_side=math.copysign(1,float(neighbor['visual_value'])-float(neighbor['host_value']))
+    if short_side==neighbor_side:cost-=5
     if short['semantic_type']==neighbor['semantic_type']:cost-=2
     if short.get('visual_subject') and short.get('visual_subject')==neighbor.get('visual_subject'):cost-=2
     if combined_seconds>float(rules['durations']['normal_max']):cost+=combined_seconds
@@ -151,27 +214,43 @@ def _merge_cost(short, neighbor, combined_seconds, rules):
     return cost
 
 
-def _score_inputs(item):
-    stored=item.get('score_weighting')
+def _value_inputs(item):
+    stored=item.get('value_weighting')
     if stored:return copy.deepcopy(stored)
     return [{'candidate_ids':copy.deepcopy(item.get('candidate_ids',[])),
-             'duration':float(item['duration']),'score':float(item['broll_score']),
-             'score_breakdown':copy.deepcopy(item.get('score_breakdown',[]))}]
+             'duration':float(item['duration']),
+             'visual_value':float(item['visual_value']),'host_value':float(item['host_value']),
+             'visual_value_breakdown':copy.deepcopy(item.get('visual_value_breakdown',[])),
+             'host_value_breakdown':copy.deepcopy(item.get('host_value_breakdown',[]))}]
 
 
-def _weighted_score_details(inputs):
+def _weighted_value_details(inputs, value_name):
     total=sum(float(item['duration']) for item in inputs)
     if total<=0:return 0.0,[]
-    score=round(sum(float(item['score'])*float(item['duration']) for item in inputs)/total,3)
+    value=round(sum(float(item[value_name])*float(item['duration']) for item in inputs)/total,3)
     weighted={};order=[]
     for item in inputs:
         weight=float(item['duration'])/total
-        for part in item.get('score_breakdown',[]):
+        for part in item.get(value_name+'_breakdown',[]):
             rule=part['rule']
             if rule not in weighted:weighted[rule]=0.0;order.append(rule)
             weighted[rule]+=float(part['value'])*weight
     breakdown=[{'rule':rule,'value':round(weighted[rule],3)} for rule in order]
-    return score,breakdown
+    return value,breakdown
+
+
+def _semantic_children(item):
+    if item.get('children'):return copy.deepcopy(item['children'])
+    keys=('candidate_ids','text','start','end','duration','semantic_type','visual_subject',
+          'importance','emotion','visual_value','host_value','visual_value_breakdown','host_value_breakdown')
+    return [{key:copy.deepcopy(item.get(key)) for key in keys}]
+
+
+def _best_visual_child(item):
+    children=_semantic_children(item)
+    return max(children,key=lambda child:(searchable_visual_subject(child.get('visual_subject')),
+        float(child.get('visual_value',0)),float(child.get('visual_value',0))-float(child.get('host_value',0)),
+        len(str(child.get('visual_subject',''))),-float(child.get('duration',0))))
 
 
 def merge_short_narratives(items, rules, duration=None, target_ratio=None):
@@ -187,8 +266,9 @@ def merge_short_narratives(items, rules, duration=None, target_ratio=None):
         _,other=min(choices,key=lambda value:(value[0],abs(value[1]-index)))
         lo=min(index,other);hi=max(index,other);left,right=output[lo],output[hi]
         dominant=left if left['duration']>=right['duration'] else right
-        score_inputs=_score_inputs(left)+_score_inputs(right)
-        weighted,breakdown=_weighted_score_details(score_inputs)
+        value_inputs=_value_inputs(left)+_value_inputs(right)
+        visual,visual_breakdown=_weighted_value_details(value_inputs,'visual_value')
+        host,host_breakdown=_weighted_value_details(value_inputs,'host_value')
         semantic_types=[]
         for source in (left,right):
             for semantic in source.get('merged_semantic_types') or [source['semantic_type']]:
@@ -196,10 +276,15 @@ def merge_short_narratives(items, rules, duration=None, target_ratio=None):
         merged={**copy.deepcopy(dominant),'id':uuid.uuid4().hex[:10],
                 'candidate_ids':left['candidate_ids']+right['candidate_ids'],
                 'text':left['text']+right['text'],'start':left['start'],'end':right['end'],
-                'duration':round(right['end']-left['start'],3),'broll_score':weighted,
-                'score_breakdown':breakdown,'score_weighting':score_inputs,
+                'duration':round(right['end']-left['start'],3),
+                'visual_value':visual,'host_value':host,
+                'visual_value_breakdown':visual_breakdown,'host_value_breakdown':host_breakdown,
+                'value_weighting':value_inputs,'children':_semantic_children(left)+_semantic_children(right),
                 'merged_semantic_types':semantic_types,
-                'merge_reason':'短句按各自实际时长加权合并'}
+                'merge_reason':'短句按各自实际时长加权合并双价值'}
+        visual_source=_best_visual_child(merged)
+        merged['visual_source']={key:copy.deepcopy(visual_source.get(key)) for key in
+                                 ('candidate_ids','text','semantic_type','visual_subject','visual_value','host_value')}
         output[lo:hi+1]=[merged]
     if duration is not None and target_ratio is not None:
         output=_assign_kinds_by_ratio(output,duration,target_ratio,rules)
@@ -220,30 +305,31 @@ def _runs(items,kind):
 
 
 def repair_continuity(items, rules):
-    output=copy.deepcopy(items);dur=rules['durations']
-    # Long B runs preferentially return to an A-favouring semantic segment.
-    for _ in range(len(output)):
-        run=next((r for r in _runs(output,'B') if r[2]>float(dur['continuous_broll_review'])),None)
-        if not run:break
-        first,last,_=run
-        candidates=[(output[i]['broll_score'],abs((output[i]['start']+output[i]['end'])/2-(output[first]['start']+output[last]['end'])/2),i)
-                    for i in range(first,last+1)
-                    if float(rules['thresholds']['optional_min'])<=output[i]['broll_score']<=float(rules['thresholds']['optional_max'])
-                    and output[i]['semantic_type'] in ('opinion','emotion','question','transition','summary','abstract','hook','intro')]
-        if not candidates:break
-        _,_,index=min(candidates);output[index]['kind']='A';output[index]['decision_reason']='连续 B-roll 超过复查阈值，在 0–2 分可选段回到人物；内容分不变'
-    # Long A runs may use a genuinely visual optional segment, but abstract or
-    # emotional speech stays A and will be varied by camera shots later.
-    for _ in range(len(output)):
-        run=next((r for r in _runs(output,'A') if r[2]>float(dur['continuous_aroll_review'])),None)
-        if not run:break
-        first,last,_=run
-        candidates=[(-output[i]['broll_score'],abs((output[i]['start']+output[i]['end'])/2-(output[first]['start']+output[last]['end'])/2),i)
-                    for i in range(first,last+1)
-                    if float(rules['thresholds']['optional_min'])<=output[i]['broll_score']<=float(rules['thresholds']['optional_max'])
-                    and searchable_visual_subject(output[i].get('visual_subject'))]
-        if not candidates:break
-        _,_,index=min(candidates);output[index]['kind']='B';output[index]['decision_reason']='连续 A-roll 超过复查阈值，在 0–2 分可选段切入相关素材；内容分不变'
+    """Return to the host only at a strong natural semantic node.
+
+    No elapsed-time cooldown is used.  A long run without a sufficiently
+    valuable internal host node remains B-roll instead of receiving a forced,
+    mechanical A-roll cut.
+    """
+    output=copy.deepcopy(items);cfg=rules['host_return']
+    minimum_items=int(cfg['minimum_broll_narratives']);minimum_host=float(cfg['minimum_host_value'])
+    while True:
+        changed=False
+        for first,last,_ in _runs(output,'B'):
+            if last-first+1<minimum_items:continue
+            middle=range(first+1,last)
+            candidates=[i for i in middle if float(output[i]['host_value'])>=minimum_host
+                        and float(output[i]['host_value'])>float(output[i]['visual_value'])]
+            if not candidates:continue
+            center=(float(output[first]['start'])+float(output[last]['end']))/2
+            index=min(candidates,key=lambda i:(-float(output[i]['host_value']),
+                      float(output[i]['visual_value']),abs((float(output[i]['start'])+float(output[i]['end']))/2-center),
+                      _optional_identity(output[i])))
+            output[index]['kind']='A'
+            output[index]['decision_reason']=(f'连续 B-roll 中出现自然人物节点：人物价值 {float(output[index]["host_value"]):g} '
+                                              f'高于视觉价值 {float(output[index]["visual_value"]):g}，回到主持人')
+            changed=True;break
+        if not changed:break
     return output
 
 
@@ -393,7 +479,7 @@ def _initial_camera(source,key,rules):
     return _stable_choice(rules['camera_choices'],key)
 
 
-def _choose_aroll_change(source,previous_camera,previous_action,can_broll,key):
+def _choose_aroll_change(source,previous_camera,previous_action,key):
     semantic=source.get('semantic_type');options=[]
     if semantic in ('hook','emotion','question','summary'):
         options+=['push_in','cut_in','push_in']
@@ -407,7 +493,6 @@ def _choose_aroll_change(source,previous_camera,previous_action,can_broll,key):
     elif previous_camera=='close':
         options=[x for x in options if x not in ('cut_in','push_in')]
         if not options:options=['pull_out','cut_out']
-    if can_broll:options+=['broll_insert']
     alternatives=[x for x in options if x!=previous_action]
     return _stable_choice(alternatives or options,key)
 
@@ -433,6 +518,7 @@ def _fallback_query(text,semantic):
 
 
 def visual_queries(item):
+    item=item.get('visual_source') or _best_visual_child(item)
     values=[]
     if searchable_visual_subject(item.get('visual_subject')):values.append(item['visual_subject'])
     fallback=_fallback_query(item['text'],item['semantic_type'])
@@ -441,8 +527,9 @@ def visual_queries(item):
 
 
 def _theme_key(item):
-    subject=re.sub(r'\W','',item.get('visual_subject','').lower())
-    return subject or item['semantic_type']
+    source=item.get('visual_source') or _best_visual_child(item)
+    subject=re.sub(r'\W','',str(source.get('visual_subject','')).lower())
+    return subject or source['semantic_type']
 
 
 def build_visual_shots(narratives, candidates, rules, semantics=None):
@@ -482,13 +569,15 @@ def build_visual_shots(narratives, candidates, rules, semantics=None):
             if not candidate_ids:
                 candidate_ids=[candidate['id'] for candidate in candidates if candidate['id'] in allowed_ids]
             source=max(covered,key=lambda n:min(end,n['end'])-max(start,n['start']))
+            material_source=(source.get('visual_source') or _best_visual_child(source)) if span['kind']=='B' else source
             unit_text=''.join(by_id[i]['text'] for i in candidate_ids if i in by_id) or source['text']
             shot={'id':uuid.uuid4().hex[:10],'narrative_ids':[n['id'] for n in covered],
                   'from':min(candidate_ids),'to':max(candidate_ids),'start':round(start,3),'end':round(end,3),
                   'kind':span['kind'],'text':unit_text,'semantic_type':source['semantic_type'],
-                  'visual_subject':source.get('visual_subject',''),'importance':source['importance'],'emotion':source['emotion'],
-                  'broll_score':source['broll_score'],'score_breakdown':source['score_breakdown'],
-                  'title':source.get('visual_subject') or source['text'][:30] or ('人物出镜' if span['kind']=='A' else '辅助画面'),
+                  'visual_subject':material_source.get('visual_subject',''),'importance':source['importance'],'emotion':source['emotion'],
+                  'visual_value':source['visual_value'],'host_value':source['host_value'],
+                  'visual_value_breakdown':source['visual_value_breakdown'],'host_value_breakdown':source['host_value_breakdown'],
+                  'title':material_source.get('visual_subject') or material_source.get('text','')[:30] or ('人物出镜' if span['kind']=='A' else '辅助画面'),
                   'reason':source['decision_reason'],'asset':None,'candidates':[],'source':None,'media_start':0,
                   'material_status':'pending' if span['kind']=='B' else 'host','visual_part':part,'visual_parts':len(cuts)-1}
             if span['kind']=='A':
@@ -504,19 +593,11 @@ def build_visual_shots(narratives, candidates, rules, semantics=None):
                 elif previous_kind=='B':
                     action='return_primary';current_camera=_initial_camera(source,span_key+'|return|'+str(part),rules)
                 else:
-                    can_broll=(part<len(cuts)-1 and end-start<=float(rules['aroll_variation']['broll_insert_max_seconds']) and
-                               source['broll_score']>=float(rules['thresholds']['optional_min']) and
-                               searchable_visual_subject(source.get('visual_subject')))
-                    action=_choose_aroll_change(source,current_camera,previous_action,can_broll,span_key+'|'+str(start))
-                if action=='broll_insert':
-                    shot['kind']='B';shot['camera']=None;shot['motion']=None;shot['visual_change']=action
-                    shot['keywords']=visual_queries(source);shot['material_status']='pending'
-                    shot['reason']='长 A-roll 在语义节点插入短 B-roll；'+shot['reason']
-                else:
-                    if action=='cut_in':current_camera='medium_close' if current_camera=='medium' else 'close'
-                    elif action=='cut_out':current_camera='medium' if current_camera=='medium_close' else 'medium_close'
-                    shot['camera']=current_camera;shot['motion']=action if action in ('push_in','pull_out') else None
-                    shot['visual_change']=action;shot['keywords']=[]
+                    action=_choose_aroll_change(source,current_camera,previous_action,span_key+'|'+str(start))
+                if action=='cut_in':current_camera='medium_close' if current_camera=='medium' else 'close'
+                elif action=='cut_out':current_camera='medium' if current_camera=='medium_close' else 'medium_close'
+                shot['camera']=current_camera;shot['motion']=action if action in ('push_in','pull_out') else None
+                shot['visual_change']=action;shot['keywords']=[]
                 previous_action=action;previous_kind=shot['kind']
             else:
                 shot['camera']=None;shot['motion']=None;shot['visual_change']='broll';shot['keywords']=visual_queries(source)
@@ -525,7 +606,10 @@ def build_visual_shots(narratives, candidates, rules, semantics=None):
 
 
 def build_timeline(candidates, semantics, duration, target_ratio, rules, silences=None):
-    classified=classify_candidates(candidates,semantics,duration,target_ratio,rules)
+    # Short segments are merged before the one and only episode-wide A/B
+    # allocation, so a provisional early decision cannot influence the final
+    # optional pool or recreate appearance-order bias through merge direction.
+    classified=classify_candidates(candidates,semantics,duration,target_ratio,rules,assign=False)
     narratives=repair_continuity(merge_short_narratives(classified,rules,duration,target_ratio),rules)
     if silences is not None:narratives=refine_directional_boundaries(narratives,silences,rules)
     shots=build_visual_shots(narratives,candidates,rules,semantics)

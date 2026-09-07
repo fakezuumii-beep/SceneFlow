@@ -83,33 +83,6 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(groups,original)
         self.assertEqual(core.merge_adjacent_aroll(merged),merged)
 
-    def test_long_broll_run_returns_to_host(self):
-        units=[{'id':i,'start':i*4,'end':i*4+3.8,'text':f'原文{i}'} for i in range(10)]
-        groups=[
-            {'from':0,'to':0,'kind':'A','title':'开场','reason':'','keywords':[]},
-            {'from':1,'to':8,'kind':'B','title':'示意','reason':'语义素材','keywords':['person thinking']},
-            {'from':9,'to':9,'kind':'A','title':'结尾','reason':'','keywords':[]},
-        ]
-        result=core.rebalance_long_broll_runs(groups,units,40,12,5,10)
-        self.assertGreater(sum(g['kind']=='A' for g in result),2)
-        self.assertLessEqual(core.max_kind_run_duration(result,units,40,'B'),12)
-        self.assertLessEqual(core.max_kind_run_duration(result,units,40,'A'),10)
-        self.assertTrue(any(g['title']=='人物回场' for g in result))
-        self.assertTrue(all(g['keywords']==['person thinking'] for g in result if g['kind']=='B'))
-
-        # A long B run between two nearly-full A runs needs a boundary swap;
-        # simply changing a B phrase to A would make the neighboring A exceed 10s.
-        units=[{'id':i,'start':i*4,'end':i*4+3.8,'text':f'原文{i}'} for i in range(8)]
-        groups=[
-            {'from':0,'to':1,'kind':'A','title':'人物','reason':'','keywords':[]},
-            {'from':2,'to':5,'kind':'B','title':'示意','reason':'','keywords':['person thinking']},
-            {'from':6,'to':7,'kind':'A','title':'人物','reason':'','keywords':[]},
-        ]
-        result=core.rebalance_long_broll_runs(groups,units,32,12,5,10)
-        self.assertLessEqual(core.max_kind_run_duration(result,units,32,'B'),12)
-        self.assertLessEqual(core.max_kind_run_duration(result,units,32,'A'),10)
-        self.assertEqual((result[0]['kind'],result[-1]['kind']),('A','A'))
-
     def test_plan_classifies_across_batches_then_builds_timeline(self):
         units=[{'id':i,'start':i*2+.2,'end':i*2+1.8,'text':f'原文{i}。'} for i in range(48)]
         p={'id':'test','segments':units,'duration':96.2,'shots':[],
