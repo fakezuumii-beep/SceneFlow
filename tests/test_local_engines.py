@@ -39,7 +39,12 @@ class LocalEngineTests(unittest.TestCase):
     def test_new_text_job_and_resume_skip_successful_tts_and_asr(self):
         with tempfile.TemporaryDirectory() as root,patch.object(core,'PROJECTS',Path(root)):
             p=core.create_project('text');pid=p['id'];p['script']={'text':'你好','provider':'azure-v1','speaker':'zh-CN-XiaoxiaoNeural','language':'Chinese','speed':1};core.save_project(p)
-            with patch('core.threading.Thread'):
+            # `all` now performs the user-facing provider preflight.  This
+            # test exercises resume/caching behavior after that gate, so keep
+            # the preflight itself out of the fixture.
+            with patch('core.threading.Thread'), patch.object(
+                core, 'generation_preflight', return_value={'ok': True, 'issues': []}
+            ):
                 core.start_job(pid,'all')
             def synthesize(_):
                 q=core.read_project(pid);q.update(audio='done.wav',segments=[{'text':'你好'}],tts={'signature':tc.signature(**q['script'])});core.save_project(q)
