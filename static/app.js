@@ -329,7 +329,7 @@ function renderSettingsStatus(){
   $('#connectionStatus').textContent=`分镜 AI：${s.llm.name}${s.llm.configured?'已配置':'待配置'} · B-roll：${s.broll.name}${s.broll.configured?'已配置':'待配置'} · A-roll：${s.aroll.name}${s.aroll.ready?'已就绪':'待准备'}`;
   $('#llmState').textContent=s.llm.configured?'✓ 已配置':'○ 尚未配置';$('#brollState').textContent=s.broll.configured?'✓ 已配置':'○ 尚未配置';$('#arollState').textContent=s.aroll.ready?'✓ 已就绪':'○ 尚未准备';
   $('#arollStatusText').textContent=(s.aroll.id==='musetalk'?(s.aroll.ready?'✓ ':'○ '):'')+(s.aroll.message||'');
-  $('#wav2lipStatusText').textContent=s.aroll.id==='wav2lip'?(s.aroll.message||'○ 尚未安装'):'○ 尚未安装';
+  $('#wav2lipStatusText').textContent=s.aroll.id==='wav2lip'?((s.aroll.ready?'✓ ':'○ ')+(s.aroll.message||'尚未安装')):'○ 尚未安装';
 }
 function settingsFormBody(){return Object.fromEntries(new FormData($('#settingsForm')))}
 async function testProvider(kind){
@@ -391,8 +391,39 @@ $('#ttsProvider').onchange=()=>{updateVoiceOptions();updateTtsNotice();rememberS
 $('#ttsLanguage').onchange=()=>{updateVoiceOptions();rememberScript();guarded(flushScript)};
 for(const id of ['#ttsSpeaker','#ttsSpeed'])$(id).onchange=()=>{rememberScript();guarded(flushScript)};
 $('#ttsButton').onclick=()=>guarded(()=>startJob('tts'));
-async function installSelectedAroll(){if($('#settingsDialog').open)$('#settingsDialog').close();if($('#preflightDialog').open)$('#preflightDialog').close();await startJob('setup_models')}
+function requestWav2LipLicense(){
+  const dialog=$('#wav2lipLicenseDialog'),checkbox=$('#wav2lipLicenseAck'),proceed=$('#wav2lipLicenseContinue');
+  checkbox.checked=false;proceed.disabled=true;dialog.showModal();
+  return new Promise(resolve=>{
+    const finish=value=>{dialog.close();resolve(value)};
+    checkbox.onchange=()=>{proceed.disabled=!checkbox.checked};
+    proceed.onclick=()=>finish(checkbox.checked);
+    $('#wav2lipLicenseCancel').onclick=()=>finish(false);
+    dialog.querySelector('.close-dialog').onclick=()=>finish(false);
+    dialog.oncancel=()=>resolve(false);
+  });
+}
+async function installSelectedAroll(){
+  if($('#settingsDialog').open){
+    state.settingsData=await api('/settings',{method:'PUT',body:JSON.stringify(settingsFormBody())});
+    applyAsrSettings(state.settingsData);await loadProviderState();$('#settingsDialog').close();
+  }
+  if($('#preflightDialog').open)$('#preflightDialog').close();
+  if(state.settingsData?.aroll_provider==='wav2lip'&&!state.settingsData.wav2lip_license_acknowledged_current){
+    if(!await requestWav2LipLicense())return;
+    state.settingsData=await api('/settings/wav2lip-license',{method:'POST',body:JSON.stringify({acknowledged:true})});
+    await loadProviderState();
+  }
+  await startJob('setup_models');
+}
 $('#installAroll').onclick=()=>guarded(installSelectedAroll);$('#installWav2lip').onclick=()=>guarded(installSelectedAroll);
+$('#wav2lipModelUpload').onchange=e=>guarded(async()=>{
+  const file=e.target.files[0];if(!file)return;
+  const output=$('#wav2lipModelStatus');output.textContent='正在校验官方模型文件…';
+  const data=new FormData();data.append('file',file);
+  const result=await api('/settings/wav2lip-model',{method:'POST',body:data});output.textContent='✓ '+result.message;
+  e.target.value='';
+});
 $('#preflightBack').onclick=()=>$('#preflightDialog').close();
 $('#preflightSettings').onclick=()=>guarded(async()=>{$('#preflightDialog').close();await openGlobalApiSettings()});
 $('#preflightInstall').onclick=()=>guarded(installSelectedAroll);

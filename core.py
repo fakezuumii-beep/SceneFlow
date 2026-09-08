@@ -26,7 +26,7 @@ FFPROBE = str(LOCAL_FFPROBE) if LOCAL_FFPROBE.is_file() else (shutil.which('ffpr
 DEFAULT_LOOP_VIDEO = ROOT/'我的素材'/'循环视频.mp4'
 
 def code_revision():
-    files=['core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py']
+    files=['core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','wav2lip_worker.py','wav2lip_setup.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py','requirements-wav2lip.txt']
     files += [str(path.relative_to(ROOT)) for path in sorted((ROOT/'providers').rglob('*.py'))]
     return hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in files)).hexdigest()[:12]
 
@@ -44,6 +44,7 @@ def _settings_defaults():
         'aroll_comfyui_url':'http://127.0.0.1:8188','aroll_comfyui_workflow':'','aroll_comfyui_workflow_hash':'',
         'aroll_person_node':'','aroll_audio_node':'','aroll_output_node':'',
         'aroll_external_name':'','aroll_external_url':'','aroll_external_api_key':'','aroll_external_model':'',
+        'wav2lip_license_acknowledged':False,'wav2lip_license_acknowledged_at':'','wav2lip_license_reference':'',
         'asr_model':'base','asr_device':'auto','language':'zh',
     }
 
@@ -84,12 +85,21 @@ def settings(private=False):
     # settings panel truthful when the server is started directly.
     public['ffmpeg_ready'] = Path(FFMPEG).is_file()
     public['cached_models'] = cached_models()
+    try:
+        import wav2lip_setup
+        public['wav2lip_license_acknowledged_current'] = bool(
+            s.get('wav2lip_license_acknowledged') and
+            s.get('wav2lip_license_reference') == wav2lip_setup.LICENSE_REFERENCE)
+        public['wav2lip_license_reference_current'] = wav2lip_setup.LICENSE_REFERENCE
+    except ImportError:
+        public['wav2lip_license_acknowledged_current'] = False
     return public
 
 def save_settings(values):
     path = PRIVATE / 'settings.json'
     s = settings(True)
-    allowed = set(_settings_defaults())
+    protected={'wav2lip_license_acknowledged','wav2lip_license_acknowledged_at','wav2lip_license_reference'}
+    allowed = set(_settings_defaults())-protected
     for key, value in values.items():
         if key not in allowed: continue
         if key.endswith('api_key') and not value: continue
@@ -108,6 +118,18 @@ def save_settings(values):
     with LOCK: atomic_json(path,{k:s[k] for k in _settings_defaults()})
     return settings()
 
+
+def acknowledge_wav2lip_license(acknowledged):
+    if acknowledged is not True:
+        raise ValueError('请先勾选“我已阅读并理解上述第三方使用限制”')
+    import wav2lip_setup
+    path=PRIVATE/'settings.json';s=settings(True)
+    s.update(wav2lip_license_acknowledged=True,
+             wav2lip_license_acknowledged_at=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
+             wav2lip_license_reference=wav2lip_setup.LICENSE_REFERENCE)
+    with LOCK:atomic_json(path,{k:s[k] for k in _settings_defaults()})
+    return settings()
+
 def cached_models():
     roots = [ROOT/'engines'/'faster-whisper'/'cache',
              Path(os.environ.get('HF_HUB_CACHE', str(Path.home()/'.cache/huggingface/hub')))]
@@ -117,6 +139,37 @@ def cached_models():
         if direct.is_file() or any(any((root/f'models--Systran--faster-whisper-{model}'/'snapshots').glob('*/model.bin')) for root in roots):
             available.append(model)
     return available
+
+
+def transcription_environment(model_cached):
+    """Build the child environment used by faster-whisper.
+
+    Packaged/local models should never trigger a Hub lookup. A normal checkout
+    with a missing model must be allowed to download it on first use, unless
+    the operator explicitly requested offline mode in the parent environment.
+    """
+    env = os.environ.copy()
+    env['PYTHONIOENCODING'] = 'utf-8'
+    offline_requested = str(env.get('HF_HUB_OFFLINE', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+    offline_requested = offline_requested or str(env.get('SOLO_OFFLINE', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+    if model_cached or offline_requested:
+        env['HF_HUB_OFFLINE'] = '1'
+    else:
+        env.pop('HF_HUB_OFFLINE', None)
+    return env
+
+
+def is_missing_whisper_model_error(detail):
+    text = str(detail).lower()
+    return ('localentrynotfounderror' in text and 'cached snapshot' in text) or \
+           ('outgoing traffic has been disabled' in text and 'faster_whisper' in text)
+
+
+def transcription_error_message(model, detail):
+    if is_missing_whisper_model_error(detail):
+        return (f'本地转录缺少 Whisper {model} 模型。请联网后重试一次以自动下载；'
+                '若当前必须离线使用，请先准备对应的本地模型。')
+    return '本地转录失败：' + str(detail)[-1300:]
 
 def project_dir(pid):
     if not re.fullmatch(r'[a-f0-9]{12}', pid): raise ValueError('无效的项目编号')
@@ -318,8 +371,11 @@ def generation_preflight(p):
     needs_aroll=not p.get('shots') or any(shot.get('kind')=='A' and not provider.is_ready(p,shot) for shot in p.get('shots',[]))
     status=provider.status()
     if needs_aroll and not status.get('ready'):
-        issues.append({'code':'aroll','message':f'当前 A-roll 组件尚未准备好：{provider.name}。{status.get("message","")}',
-                       'action':'install' if provider.id=='musetalk' else 'settings'})
+        message=(f'Wav2Lip 尚未安装或尚未确认第三方使用限制。这是一个可选的非商业口型组件。'
+                 if provider.id=='wav2lip' else
+                 f'当前 A-roll 组件尚未准备好：{provider.name}。{status.get("message","")}')
+        issues.append({'code':'aroll','message':message,
+                       'action':'install' if provider.id in ('musetalk','wav2lip') else 'settings'})
     return {'ok':not issues,'issues':issues,
             'providers':{'llm':resolve_llm_config(cfg).get('name'),'broll':resolve_broll_config(cfg).get('name'),
                          'aroll':provider.name,'aroll_short_name':provider.short_name}}
@@ -378,13 +434,14 @@ def job_worker(pid,action,shot_id=None):
 
 def transcribe(pid):
     p=read_project(pid); cfg=settings(True)
-    if cfg['asr_model'] not in cached_models():progress(pid,'本地转录',0,f'首次使用正在下载 Whisper {cfg["asr_model"]}…')
+    model_cached = cfg['asr_model'] in cached_models()
+    if not model_cached:progress(pid,'本地转录',0,f'首次使用正在下载 Whisper {cfg["asr_model"]}…')
     progress(pid,'转录',2,'正在加载本地 Whisper；首次加载可能需要一两分钟')
     folder=project_dir(pid); out=folder/'transcription.work.json'; status=folder/'transcription.progress.json'
     reference=folder/'alignment.reference.txt';reference.unlink(missing_ok=True)
     if p.get('tts') and p.get('script',{}).get('text'):
         reference.write_text(p['script']['text'],encoding='utf-8')
-    env=os.environ.copy(); env['PYTHONIOENCODING']='utf-8'; env['HF_HUB_OFFLINE']='1'
+    env=transcription_environment(model_cached)
     command=[sys.executable,str(ROOT/'transcribe.py'),str(asset_path(pid,p['audio'])),str(out),str(status),cfg['asr_model'],cfg['asr_device'],cfg['language']]
     if reference.exists():command.append(str(reference))
     proc=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
@@ -405,7 +462,8 @@ def transcribe(pid):
             except (OSError,ValueError): pass
             progress(pid,'转录',pc,message)
         reader.join(timeout=2)
-        if proc.returncode: raise RuntimeError('本地转录失败：'+''.join(errors)[-1300:])
+        if proc.returncode:
+            raise RuntimeError(transcription_error_message(cfg['asr_model'], ''.join(errors)))
         result=json.loads(out.read_text(encoding='utf-8'))
         segments=normalize_segments(result['segments'],p['duration'])
         with LOCK:

@@ -115,7 +115,7 @@ class UiSettingsTests(unittest.TestCase):
         self.assertIn("url('/quick-launch-backgrounds/not-ready.png')", self.css)
         self.assertIn('.quick-launch:not(.pending)::after', self.css)
         self.assertIn('animation:quick-launch-border-sweep', self.css)
-        self.assertIn('/style.css?v=20260908-provider-ui-v1', self.html)
+        self.assertIn('/style.css?v=20260908-wav2lip-v1', self.html)
         self.assertIn('.quick-launch>#quickLaunchStatus{display:none}', self.css)
         self.assertIn('filter:none', self.css)
         self.assertIn("background:url('/quick-launch-backgrounds/ready.png')", self.css)
@@ -132,7 +132,18 @@ class UiSettingsTests(unittest.TestCase):
         self.assertIn("const oneClickGenerating=state.startingAction==='all'||(j?.status==='running'&&j.action==='all')", self.javascript)
         self.assertIn("oneClickGenerating?'正在生成':currentVersionExported?'重新生成':'一键生成播客'", self.javascript)
         self.assertIn("const currentVersionExported=p.exports.some(e=>e.revision===p.revision)", self.javascript)
-        self.assertIn('/app.js?v=20260908-provider-ui-v1', self.html)
+        self.assertIn('/app.js?v=20260908-wav2lip-v1', self.html)
+
+    def test_wav2lip_install_requires_visible_third_party_acknowledgement(self):
+        self.assertIn('id="wav2lipLicenseDialog"', self.html)
+        self.assertIn('id="wav2lipLicenseAck" type="checkbox"', self.html)
+        self.assertIn('id="wav2lipLicenseContinue" disabled', self.html)
+        self.assertIn('https://github.com/Rudrabha/Wav2Lip#non-commercial-open-source-version', self.html)
+        self.assertIn('rel="noopener noreferrer"', self.html)
+        self.assertIn('id="wav2lipModelUpload" type="file" accept=".pt,.pth"', self.html)
+        self.assertIn("if(!await requestWav2LipLicense())return", self.javascript)
+        self.assertIn("api('/settings/wav2lip-license'", self.javascript)
+        self.assertIn("api('/settings/wav2lip-model'", self.javascript)
 
 
 if __name__ == '__main__':

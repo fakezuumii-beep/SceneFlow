@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import re
 
 from tts_common import LANGUAGES, signature
 
@@ -209,11 +210,43 @@ def install(pid):
             stop(proc)
 
 
+def install_wav2lip(pid):
+    import core as c
+    import wav2lip_setup as setup
+
+    cfg=c.settings(True)
+    if not (cfg.get('wav2lip_license_acknowledged') and
+            cfg.get('wav2lip_license_reference')==setup.LICENSE_REFERENCE):
+        raise ValueError('请先阅读并确认 Wav2Lip 第三方非商业使用限制')
+    c.progress(pid,'安装 Wav2Lip',1,'正在准备独立 Wav2Lip 环境…')
+    logdir=c.DATA/'logs';logdir.mkdir(parents=True,exist_ok=True)
+    logpath=logdir/'wav2lip-install.log';env=os.environ.copy();env['PYTHONIOENCODING']='utf-8'
+    with logpath.open('wb') as log:
+        proc=subprocess.Popen([sys.executable,'-u',str(c.ROOT/'wav2lip_setup.py'),'--acknowledge-license'],
+                              cwd=c.ROOT,env=env,stdout=log,stderr=log,creationflags=FLAGS)
+        try:
+            while proc.poll() is None:
+                with logpath.open('rb') as tail:
+                    tail.seek(max(0,logpath.stat().st_size-3000))
+                    lines=tail.read().decode('utf-8','replace').splitlines()
+                line=next((value for value in reversed(lines) if value.strip()),'正在准备下载…')
+                match=re.match(r'\[(\d{3})\]\s*(.*)',line)
+                percent=int(match.group(1)) if match else 1;message=match.group(2) if match else line
+                c.progress(pid,'安装 Wav2Lip',percent,message[:400]);time.sleep(1)
+            if proc.returncode:
+                detail=logpath.read_text(encoding='utf-8',errors='replace')[-1800:]
+                last=next((value.strip() for value in reversed(detail.splitlines()) if value.strip()),'安装失败')
+                raise RuntimeError('Wav2Lip 安装未完成，可选择官方模型文件后重试。'+last[-700:])
+        finally:
+            if proc.poll() is None and os.name=='nt':
+                subprocess.run(['taskkill','/PID',str(proc.pid),'/T','/F'],capture_output=True,creationflags=FLAGS)
+            stop(proc)
+
+
 def install_aroll(pid):
     import core as c
     from providers.aroll import get_aroll_provider
     provider=get_aroll_provider(c.settings(True))
     if provider.id=='musetalk':return install(pid)
-    if provider.id=='wav2lip':
-        raise ValueError('Wav2Lip 受非商业许可证限制，自动安装尚未开放；请先阅读许可说明或改用 MuseTalk')
+    if provider.id=='wav2lip':return install_wav2lip(pid)
     raise ValueError(f'{provider.name} 不需要本地安装，请在「连接与设置」完成连接配置')

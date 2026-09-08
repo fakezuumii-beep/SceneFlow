@@ -12,6 +12,9 @@ engines/MuseTalk/
 engines/smoke*
 engines/source-install-smoke/
 engines/media-env/
+engines/Wav2Lip/
+engines/wav2lip-env/
+engines/.Wav2Lip-*.tmp/
 engines/.hf-hub/
 engines/downloads/
 outputs/

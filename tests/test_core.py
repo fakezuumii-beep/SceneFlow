@@ -1,4 +1,4 @@
-import copy, json, math, sys, tempfile, unittest
+import copy, json, math, os, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import core
@@ -15,6 +15,23 @@ class TimelineTests(unittest.TestCase):
             model.mkdir(parents=True);(model/'model.bin').write_bytes(b'model')
             with patch.object(core,'ROOT',root), patch.dict('os.environ',{'HF_HUB_CACHE':cache}):
                 self.assertEqual(core.cached_models(),['base'])
+
+    def test_missing_asr_model_allows_first_download(self):
+        with patch.dict(os.environ, {}, clear=True):
+            env = core.transcription_environment(False)
+            self.assertNotIn('HF_HUB_OFFLINE', env)
+
+    def test_cached_asr_model_stays_offline(self):
+        with patch.dict(os.environ, {}, clear=True):
+            env = core.transcription_environment(True)
+            self.assertEqual(env['HF_HUB_OFFLINE'], '1')
+
+    def test_explicit_offline_missing_model_has_actionable_error(self):
+        detail = ('huggingface_hub.errors.LocalEntryNotFoundError: Cannot find an '
+                  'appropriate cached snapshot folder; outgoing traffic has been disabled')
+        message = core.transcription_error_message('base', detail)
+        self.assertIn('联网后重试', message)
+        self.assertNotIn('Traceback', message)
 
     def test_parse_silencedetect_pairs_ordered_intervals(self):
         text='silence_start: 11.160312\nsilence_end: 12.067146 | silence_duration: 0.906834\n'

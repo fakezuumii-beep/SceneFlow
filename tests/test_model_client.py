@@ -49,9 +49,9 @@ class ModelClientTests(unittest.TestCase):
         p={'segments':[{'text':'already transcribed'}],'shots':[], 'job':{},'exports':[]}
         def plan(pid):p['shots']=[{'kind':'A'}]
         def fail(pid):raise m.ModelError('temporary failure')
-        with patch.object(core,'read_project',side_effect=lambda pid:p),patch.object(core,'save_project'),patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=fail),patch.object(core,'materials') as stock,patch('aroll.generate') as lips,patch.object(core,'render') as render:
+        with patch.object(core,'read_project',side_effect=lambda pid:p),patch.object(core,'save_project'),patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=fail),patch.object(core,'materials') as stock,patch('providers.aroll.get_aroll_provider') as registry,patch.object(core,'render') as render:
             core.ACTIVE['x']={};core.job_worker('x','all')
-            self.assertEqual(p['job']['status'],'error');asr.assert_not_called();stock.assert_not_called();lips.assert_not_called()
-        with patch.object(core,'read_project',side_effect=lambda pid:p),patch.object(core,'save_project'),patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=plan),patch.object(core,'materials'),patch('aroll.generate'),patch.object(core,'render') as render:
+            self.assertEqual(p['job']['status'],'error');asr.assert_not_called();stock.assert_not_called();registry.return_value.generate.assert_not_called()
+        with patch.object(core,'read_project',side_effect=lambda pid:p),patch.object(core,'save_project'),patch.object(core,'transcribe') as asr,patch.object(core,'plan',side_effect=plan),patch.object(core,'materials'),patch('providers.aroll.get_aroll_provider') as registry,patch.object(core,'render') as render:
             core.ACTIVE['x']={};core.job_worker('x','all')
-            self.assertEqual(p['job']['status'],'done');asr.assert_not_called();render.assert_called_once()
+            self.assertEqual(p['job']['status'],'done');asr.assert_not_called();registry.return_value.generate.assert_called_once();render.assert_called_once()

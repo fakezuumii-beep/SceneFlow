@@ -58,9 +58,9 @@ Ensure-Directory (Join-Path $stage 'data')
 
 $rootFiles = @(
     'server.py','core.py','storyboard.py','storyboard_rules.json','atomic_files.py',
-    'aroll.py','musetalk_worker.py','worker_progress.py','model_client.py',
+    'aroll.py','musetalk_worker.py','wav2lip_worker.py','wav2lip_setup.py','worker_progress.py','model_client.py',
     'transcribe.py','speech_units.py','local_engines.py','tts_common.py',
-    'azure_tts_worker.py','engine_setup.py','requirements.txt','requirements-media.txt',
+    'azure_tts_worker.py','engine_setup.py','requirements.txt','requirements-media.txt','requirements-wav2lip.txt',
     'install-portable.ps1'
 )
 foreach ($name in $rootFiles) {
@@ -193,9 +193,10 @@ SOLO v0.1.0-beta.1 · Windows 10/11 x64
 你不需要安装 Python、FFmpeg、uv，也不需要打开 PowerShell。
 便携版已内置 Python 3.12.10、FFmpeg/ffprobe、基础依赖和 faster-whisper Base。
 
-A-roll / MuseTalk
+A-roll / MuseTalk / Wav2Lip
 核心工作台可以先启动。第一次使用人物口型时，在界面点击“安装 / 校验 A-roll 组件”；
-MuseTalk 运行环境和模型体积较大，会按需下载。A-roll 未安装不会阻止普通音频、分镜和素材功能。
+MuseTalk 运行环境和模型体积较大，会按需下载。Wav2Lip 也不在主包中，选择它并阅读、确认第三方非商业使用限制后才会安装。
+A-roll 未安装不会阻止普通音频、分镜和素材功能。
 
 用户数据保存在本文件夹的 data\，更新 app\ 不会删除项目和设置。
 遇到启动问题，请把 data\logs\launcher.log 和 server-error.log 一并提供给开发者。

@@ -34,7 +34,7 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
 | 真实时间轴 | faster-whisper 为文稿/音频生成词级时间，镜头边界跟随真实停顿与语义节点。 |
 | 智能分镜 | 默认由 DeepSeek 判断语义与可视化对象，也可连接自定义 OpenAI 兼容服务；程序统一决定人物出镜、B-roll 占比和镜头节奏。 |
 | 画面素材 | 根据具体可视化对象检索 Pexels 或 Pixabay，也能逐镜换片或导入本地图片/视频。 |
-| 人物口型 | 可选择轻量本地 Wav2Lip、高质量本地 MuseTalk 1.5，或配置 ComfyUI / 在线 API 自定义工作流。当前完整本地生成链由 MuseTalk 提供。 |
+| 人物口型 | 可选择轻量本地 Wav2Lip、高质量本地 MuseTalk 1.5，或配置 ComfyUI / 在线 API 自定义工作流。Wav2Lip 与 MuseTalk 均可接入一键生成。 |
 | 最终交付 | 导出 16:9 MP4、字幕 SRT，以及可追溯的镜头和素材来源清单。 |
 
 ## 技术范围
@@ -45,7 +45,7 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
 
 - 分镜 AI：默认支持 DeepSeek，只填写 API Key；高级用户也可以配置 OpenAI 兼容服务。
 - B-roll：支持 Pexels / Pixabay，选择素材源后只填写对应 API Key。
-- A-roll：支持轻量本地、高质量本地和自定义工作流三档。Wav2Lip 的模型和代码受非商业使用限制，不随主 Portable 打包。
+- A-roll：支持轻量本地、高质量本地和自定义工作流三档。Wav2Lip 需先确认第三方非商业使用限制，再按需安装独立环境；其模型和代码不随主 Portable 打包。
 
 文字配音使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。只有用户主动选择并配置自定义 A-roll 时，工作台才会测试对应的 ComfyUI 或在线服务。
 
@@ -89,7 +89,7 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
 3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SOLO。
 4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key。
 
-不需要安装 Python、FFmpeg 或 uv，也不需要配置 PATH、pip 或 PowerShell。便携版内置 Python 3.12.10、FFmpeg/ffprobe、SOLO 基础依赖和 faster-whisper Base。MuseTalk / A-roll 组件体积较大，第一次使用人物口型时在界面点击「安装 / 校验 A-roll 组件」按需安装；A-roll 未安装不会阻止核心工作台启动。
+不需要安装 Python、FFmpeg 或 uv，也不需要配置 PATH、pip 或 PowerShell。便携版内置 Python 3.12.10、FFmpeg/ffprobe、SOLO 基础依赖和 faster-whisper Base。MuseTalk 与 Wav2Lip 都按需安装到各自的独立环境；Wav2Lip 安装前必须阅读并确认第三方非商业使用限制。A-roll 未安装不会阻止核心工作台启动。
 
 用户项目、设置和缓存保存在便携版文件夹的 `data/` 中。更新应用代码时不会删除 `data/`。
 
@@ -132,9 +132,9 @@ Pexels 是默认素材源，Pixabay 是可选替代源。Whisper 模型、运行
 
 A-roll 三档为：
 
-- 轻量本地 · Wav2Lip：按需安装入口与许可证警示；仅限个人、研究和非商业用途。
+- 轻量本地 · Wav2Lip：确认第三方限制后按需下载固定源码、官方 TorchScript checkpoint 与独立 Python 3.10 环境；支持图片、正向循环视频、连续 A-roll run 和断点续传。仅建议个人、研究和非商业用途。
 - 高质量本地 · MuseTalk 1.5：复用现有独立引擎、断点续传安装器和缓存。
-- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SOLO External A-roll API 配置。当前版本尚未开放这三类新增适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
+- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SOLO External A-roll API 配置。当前版本尚未开放这两类自定义适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
 
 ## 文字配音
 
@@ -145,6 +145,8 @@ Azure TTS V1 是新项目默认引擎，默认中文音色为 `zh-CN-XiaoxiaoNeu
 ## 独立 MuseTalk 口型
 
 工作台直接调用固定版本的 MuseTalk 源码与官方 1.5 权重。一次任务会先加载模型，再连续处理所有待生成 A-roll，避免每个短镜头重新载入模型。静态人物图会保持单机位；人物循环视频按播客绝对时间连续向前取帧，保留原有眨眼和身体动作。
+
+Wav2Lip 使用单独的 `engines/wav2lip-env`，不会升级或降级 MuseTalk 的 `media-env`。安装器固定源码 revision 和依赖版本，模型下载写入 `.part` 并支持 Range 续传，校验大小与 SHA256 后才替换正式文件。自动获取官方模型失败时，可在「连接与设置」选择从官方说明页下载的本地模型文件。
 
 推理运行在独立 Python 进程中：
 

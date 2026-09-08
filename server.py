@@ -55,7 +55,8 @@ def provider_status():
 @app.get('/api/health')
 def health():
     return {'status':'ok','revision':LOADED_REVISION,'update_required':LOADED_REVISION!=c.code_revision(),
-            'features':{'reliable_planning':True,'semantic_rule_planning':True,'musetalk':True,'direct_musetalk':True,'deepseek_api':True,'text_to_video':True}}
+            'features':{'reliable_planning':True,'semantic_rule_planning':True,'musetalk':True,'direct_musetalk':True,
+                        'wav2lip_on_demand':True,'deepseek_api':True,'text_to_video':True}}
 
 # Stable, short health URL used by the Windows launcher and smoke tests.  Keep
 # the API form above for backwards compatibility with existing clients.
@@ -86,6 +87,35 @@ def put_settings(body:dict):
     with c.LOCK:
         if c.ACTIVE: raise ValueError('任务运行中，请完成后再修改连接设置')
         return c.save_settings(body)
+
+
+@app.post('/api/settings/wav2lip-license')
+def acknowledge_wav2lip_license(body:dict):
+    with c.LOCK:
+        if c.ACTIVE:raise ValueError('任务运行中，请完成后再确认安装')
+        return c.acknowledge_wav2lip_license(body.get('acknowledged'))
+
+
+@app.post('/api/settings/wav2lip-model')
+def upload_wav2lip_model(file:UploadFile=File(...)):
+    import wav2lip_setup as setup
+    if Path(file.filename or '').suffix.lower() not in ('.pt','.pth'):
+        raise ValueError('请选择官方 Wav2Lip-SD-GAN.pt 模型文件')
+    folder=setup.ENGINES/'downloads';folder.mkdir(parents=True,exist_ok=True)
+    target=folder/f'manual-{setup.CHECKPOINT_NAME}';temporary=target.with_suffix(target.suffix+'.part')
+    size=0
+    try:
+        with temporary.open('wb') as stream:
+            while chunk:=file.file.read(2*1024*1024):
+                size+=len(chunk)
+                if size>setup.CHECKPOINT_SIZE+1:raise ValueError('所选模型文件大小不正确')
+                stream.write(chunk)
+        if not setup.verified(temporary,setup.CHECKPOINT_SIZE,setup.CHECKPOINT_SHA256):
+            raise ValueError('所选文件不是当前支持的官方 Wav2Lip-SD-GAN.pt（SHA256 不匹配）')
+        os.replace(temporary,target)
+        return {'ok':True,'message':'官方 Wav2Lip 模型已校验，点击安装即可继续'}
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def temporary_settings(body):
@@ -266,6 +296,8 @@ def preflight(pid:str):return c.generation_preflight(c.read_project(pid))
 def cancel(pid:str):
     with c.LOCK:
         if pid in c.ACTIVE: c.ACTIVE[pid]['cancel']=True
+    try:get_aroll_provider(c.settings(True)).cancel(pid)
+    except Exception:pass
     return {'message':'将在当前处理步骤结束后停止，已完成内容会保留'}
 
 @app.patch('/api/projects/{pid}/shots/{sid}')
