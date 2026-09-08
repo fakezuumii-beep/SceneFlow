@@ -1,5 +1,5 @@
 from __future__ import annotations
-import copy, json, math, mimetypes, os, re, shutil, time, uuid
+import copy, hashlib, json, math, mimetypes, os, re, shutil, time, uuid
 from contextlib import contextmanager, asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
@@ -8,7 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from PIL import Image, ImageOps
 import core as c
-import aroll
+from providers import public_catalog
+from providers.llm import resolve_llm_config, test_connection as test_llm_connection
+from providers.broll import resolve_broll_config, test_connection as test_broll_connection
+from providers.aroll import get_aroll_provider
 LOADED_REVISION=c.code_revision()
 
 @asynccontextmanager
@@ -37,6 +40,18 @@ async def runtime_error(request,exc): return JSONResponse({'detail':c.safe_error
 @app.get('/api/settings')
 def get_settings(): return c.settings()
 
+
+@app.get('/api/providers')
+def providers(): return public_catalog()
+
+
+@app.get('/api/providers/status')
+def provider_status():
+    cfg=c.settings(True);llm=resolve_llm_config(cfg);broll=resolve_broll_config(cfg);aroll_provider=get_aroll_provider(cfg)
+    return {'llm':{'id':llm['provider'],'name':llm['name'],'configured':bool(llm['api_key'])},
+            'broll':{'id':broll['provider'],'name':broll['name'],'configured':bool(broll['api_key'])},
+            'aroll':{'id':aroll_provider.id,'name':aroll_provider.name,'short_name':aroll_provider.short_name,**aroll_provider.status()}}
+
 @app.get('/api/health')
 def health():
     return {'status':'ok','revision':LOADED_REVISION,'update_required':LOADED_REVISION!=c.code_revision(),
@@ -64,13 +79,48 @@ def save_script(pid:str,body:dict):
         return p
 
 @app.get('/api/aroll/status')
-def aroll_status():return aroll.installation_status(True)
+def aroll_status():return get_aroll_provider(c.settings(True)).status(True)
 
 @app.put('/api/settings')
 def put_settings(body:dict):
     with c.LOCK:
         if c.ACTIVE: raise ValueError('任务运行中，请完成后再修改连接设置')
         return c.save_settings(body)
+
+
+def temporary_settings(body):
+    cfg=c.settings(True);allowed=set(c._settings_defaults())
+    for key,value in body.items():
+        if key not in allowed:continue
+        if key.endswith('api_key') and not value:continue
+        cfg[key]=value
+    return cfg
+
+
+@app.post('/api/settings/test')
+def test_settings(body:dict):
+    cfg=temporary_settings(body);kind=str(body.get('type') or '')
+    if kind=='llm':return test_llm_connection(cfg)
+    if kind=='broll':return test_broll_connection(cfg)
+    if kind=='aroll':
+        provider=get_aroll_provider(cfg)
+        if hasattr(provider,'test_connection'):return provider.test_connection()
+        status=provider.status(True)
+        if not status.get('ready'):raise ValueError(f'{provider.name} 尚未就绪：{status.get("message","")}')
+        return {'ok':True,'message':f'{provider.name} 已就绪'}
+    raise ValueError('请选择要测试的服务')
+
+
+@app.post('/api/settings/aroll-workflow')
+def upload_aroll_workflow(file:UploadFile=File(...)):
+    raw=file.file.read(5*1024*1024+1)
+    if len(raw)>5*1024*1024:raise ValueError('工作流文件不能超过 5 MB')
+    try: workflow=json.loads(raw.decode('utf-8-sig'))
+    except (UnicodeDecodeError,json.JSONDecodeError):raise ValueError('请选择有效的 workflow_api.json') from None
+    if not isinstance(workflow,dict) or not workflow:raise ValueError('工作流必须是非空 JSON 对象')
+    digest=hashlib.sha256(json.dumps(workflow,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    folder=c.PRIVATE/'workflows';folder.mkdir(exist_ok=True);path=folder/f'{digest}.json';c.atomic_json(path,workflow)
+    return c.save_settings({'aroll_comfyui_workflow':f'workflows/{digest}.json','aroll_comfyui_workflow_hash':digest})
 
 @app.get('/api/projects')
 def projects():
@@ -85,7 +135,7 @@ def create(body:dict): return c.create_project(str(body.get('name','我的第一
 
 @app.get('/api/projects/{pid}')
 def project(pid:str):
-    p=c.read_project(pid); p['captions']=c.subtitle_events(p); return aroll.decorate(p)
+    p=c.read_project(pid); p['captions']=c.subtitle_events(p); return get_aroll_provider(c.settings(True)).decorate(p)
 
 @app.patch('/api/projects/{pid}')
 def patch_project(pid:str,body:dict):
@@ -95,7 +145,7 @@ def patch_project(pid:str,body:dict):
         if 'options' in body:
             options={**p['options'],**body['options']}
             options={k:options[k] for k in p['options']}
-            if options['resolution'] not in ('720p','1080p') or options['source'] not in ('pexels','pixabay'): raise ValueError('设置选项无效')
+            if options['resolution'] not in ('720p','1080p') or options['source'] not in ('global','pexels','pixabay'): raise ValueError('设置选项无效')
             if not 0<=int(options['broll_ratio'])<=80 or not 6<=int(options['max_shot'])<=40: raise ValueError('分镜偏好超出范围')
             options['broll_ratio']=int(options['broll_ratio']); options['max_shot']=int(options['max_shot']); options['subtitles']=bool(options['subtitles'])
             p['options']=options
@@ -208,6 +258,10 @@ def operation(pid,label):
 @app.post('/api/projects/{pid}/jobs')
 def job(pid:str,body:dict): return c.start_job(pid,body.get('action'),body.get('shot_id'))
 
+
+@app.get('/api/projects/{pid}/preflight')
+def preflight(pid:str):return c.generation_preflight(c.read_project(pid))
+
 @app.post('/api/projects/{pid}/cancel')
 def cancel(pid:str):
     with c.LOCK:
@@ -241,7 +295,8 @@ def search(pid:str,sid:str):
         if not shot: raise ValueError('镜头不存在')
         found=[]; seen=set()
         for term in shot['keywords'][:3]:
-            for cand in c.search_stock(term,p['options']['source'],c.settings(True)):
+            source=resolve_broll_config(c.settings(True),require_key=True)['provider']
+            for cand in c.search_stock(term,source,c.settings(True)):
                 if cand['id'] not in seen: found.append(cand); seen.add(cand['id'])
             if len(found)>=c.CANDIDATE_LIMIT: break
         shot['candidates']=c.stash_candidates(pid,sid,found[:c.CANDIDATE_LIMIT]); c.save_project(p); return p

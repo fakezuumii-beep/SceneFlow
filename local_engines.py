@@ -38,12 +38,16 @@ AZURE_DEFAULT = {'Chinese': 'zh-CN-XiaoxiaoNeural', 'English': 'en-US-AvaNeural'
 
 def status():
     import aroll
+    import core as c
+    from providers.aroll import get_aroll_provider
 
     azure = {'name': 'Azure TTS V1', 'ready': importlib.util.find_spec('edge_tts') is not None, 'online': True}
+    selected=get_aroll_provider(c.settings(True));selected_status=selected.status()
     return {
         'tts': {**azure, 'provider': AZURE_PROVIDER},
         'providers': {AZURE_PROVIDER: azure},
         'musetalk': aroll.installation_status(),
+        'aroll': {'id':selected.id,'name':selected.name,'short_name':selected.short_name,**selected_status},
         'azure_voices': AZURE_VOICES,
         'languages': LANGUAGES,
     }
@@ -203,3 +207,13 @@ def install(pid):
             if proc.poll() is None and os.name == 'nt':
                 subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, creationflags=FLAGS)
             stop(proc)
+
+
+def install_aroll(pid):
+    import core as c
+    from providers.aroll import get_aroll_provider
+    provider=get_aroll_provider(c.settings(True))
+    if provider.id=='musetalk':return install(pid)
+    if provider.id=='wav2lip':
+        raise ValueError('Wav2Lip 受非商业许可证限制，自动安装尚未开放；请先阅读许可说明或改用 MuseTalk')
+    raise ValueError(f'{provider.name} 不需要本地安装，请在「连接与设置」完成连接配置')

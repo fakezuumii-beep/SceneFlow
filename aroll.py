@@ -9,6 +9,8 @@ FPS=25
 CONTEXT=.2
 ADAPTER_VERSION='musetalk15-direct-static-v2'
 VIDEO_ADAPTER_VERSION='musetalk15-direct-video-v4-shared-runs'
+DEFAULT_PROVIDER_IDENTITY={'provider':'musetalk','provider_version':'musetalk15-provider-v1','model':'MuseTalk 1.5',
+                           'adapter':VIDEO_ADAPTER_VERSION+'|'+ADAPTER_VERSION,'workflow_hash':None}
 
 def media_python():return ENGINES/'media-env'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
 
@@ -55,21 +57,21 @@ def contiguous_runs(shots):
 def shot_run(p,s):
     return next((run for run in contiguous_runs(p.get('shots',[])) if any(x.get('id')==s.get('id') for x in run)),[s])
 
-def run_signature(p,run):
+def run_signature(p,run,provider_identity=None):
     import core as c
     if not p.get('audio'):return ''
-    content=[VIDEO_ADAPTER_VERSION if video_source(p) else ADAPTER_VERSION,stamp(c.asset_path(p['id'],p['audio'])),
+    content=[provider_identity or DEFAULT_PROVIDER_IDENTITY,VIDEO_ADAPTER_VERSION if video_source(p) else ADAPTER_VERSION,stamp(c.asset_path(p['id'],p['audio'])),
              stamp(c.host_media(p)),run[0]['start'],run[-1]['end'],FPS,CONTEXT]
     return hashlib.sha256(json.dumps(content,ensure_ascii=False).encode()).hexdigest()[:24]
 
-def signature(p,s):
+def signature(p,s,provider_identity=None):
     if not p.get('audio'):return ''
-    content=[run_signature(p,shot_run(p,s)),s['start'],s['end']]
+    content=[run_signature(p,shot_run(p,s),provider_identity),s['start'],s['end']]
     return hashlib.sha256(json.dumps(content,ensure_ascii=False).encode()).hexdigest()[:24]
 
-def is_ready(p,s):
+def is_ready(p,s,provider_identity=None):
     import core as c
-    return bool(s.get('aroll_asset') and s.get('aroll_signature')==signature(p,s)
+    return bool(s.get('aroll_asset') and s.get('aroll_signature')==signature(p,s,provider_identity)
                 and (c.project_dir(p['id'])/s['aroll_asset']).is_file())
 
 def decorate(p):
@@ -174,17 +176,18 @@ def _run_worker_once(pid,request,progress_file):
                 return logpath.read_text(encoding='utf-8',errors='replace')[-1800:]
         finally:stop(proc)
 
-def generate(pid,shot_id=None):
+def generate(pid,shot_id=None,provider_identity=None):
     import core as c
     p=c.read_project(pid);runs=contiguous_runs(p['shots'])
     if shot_id and not any(any(s['id']==shot_id for s in run) for run in runs):raise ValueError('未找到选中的 A-roll 镜头')
-    pending=[run for run in runs if ((not shot_id and any(not is_ready(p,s) for s in run)) or
+    provider_identity=provider_identity or DEFAULT_PROVIDER_IDENTITY
+    pending=[run for run in runs if ((not shot_id and any(not is_ready(p,s,provider_identity) for s in run)) or
                                      (shot_id and any(s['id']==shot_id for s in run)))]
     if not pending:return
     if not installation_status()['installed']:raise ValueError('MuseTalk 独立引擎尚未安装，请在「连接与设置」安装本地媒体引擎')
     c.validate_timeline(p['shots'],p['duration']);folder=c.project_dir(pid);is_video=video_source(p);prepared=[]
     for run in pending:
-        stable=run_signature(p,run);suffix=('-'+uuid.uuid4().hex[:6] if shot_id else '');base=stable+suffix
+        stable=run_signature(p,run,provider_identity);suffix=('-'+uuid.uuid4().hex[:6] if shot_id else '');base=stable+suffix
         cache=folder/'aroll-cache'/base;cache.mkdir(parents=True,exist_ok=True)
         context_start=max(0,float(run[0]['start'])-CONTEXT);context_end=min(p['duration'],float(run[-1]['end'])+CONTEXT)
         audio=cache/'audio.wav'
@@ -198,7 +201,7 @@ def generate(pid,shot_id=None):
                 with Image.open(c.host_image(p)) as image:ImageOps.fit(image.convert('RGB'),(1920,1080),method=Image.Resampling.LANCZOS).save(source,quality=95)
         items=[]
         for s in run:
-            sig=signature(p,s);start_frame=round((float(s['start'])-context_start)*FPS)
+            sig=signature(p,s,provider_identity);start_frame=round((float(s['start'])-context_start)*FPS)
             end_frame=round((float(s['end'])-context_start)*FPS);frames=end_frame-start_frame
             items.append({'shot':s,'signature':sig,'frames':frames,'start_frame':start_frame})
         prepared.append({'run':run,'cache':cache,'raw':cache/'raw.mp4','duration':context_end-context_start,
@@ -228,7 +231,9 @@ def generate(pid,shot_id=None):
                     if target.get('aroll_asset') and target['aroll_asset']!=asset.relative_to(folder).as_posix():
                         target.setdefault('aroll_history',[]).append({'asset':target['aroll_asset'],'signature':target.get('aroll_signature')})
                     target.update(aroll_asset=asset.relative_to(folder).as_posix(),aroll_signature=item['signature'],aroll_status='ready',aroll_error=None,
-                        aroll_provenance={'engine':'MuseTalk 1.5','runtime':'standalone','adapter':VIDEO_ADAPTER_VERSION if is_video else ADAPTER_VERSION,
+                        aroll_provenance={'provider':provider_identity['provider'],'engine':'MuseTalk 1.5','runtime':'local',
+                        'provider_version':provider_identity['provider_version'],'model':provider_identity.get('model'),
+                        'workflow_hash':provider_identity.get('workflow_hash'),'adapter':VIDEO_ADAPTER_VERSION if is_video else ADAPTER_VERSION,
                         'source':c.host_media(p).relative_to(folder).as_posix(),'source_kind':'video' if is_video else 'image',
                         'loop_mode':'forward' if is_video else None,'fps':FPS,'duration':item['frames']/FPS,'continuous_asset_duration':info['duration'],
                         'audio_start':item['shot']['start'],'audio_end':item['shot']['end'],'continuous_run_start':run_item['run'][0]['start'],

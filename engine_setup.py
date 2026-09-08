@@ -55,6 +55,7 @@ def download(url,path,sha=None,size=None):
             time.sleep(2)
 
 def model(repo,rev,folder,only):
+    wanted=set(only)
     manifest_path=folder/'installed.json'
     try:
         installed=json.loads(manifest_path.read_text(encoding='utf-8'))

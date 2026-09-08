@@ -26,7 +26,8 @@ FFPROBE = str(LOCAL_FFPROBE) if LOCAL_FFPROBE.is_file() else (shutil.which('ffpr
 DEFAULT_LOOP_VIDEO = ROOT/'我的素材'/'循环视频.mp4'
 
 def code_revision():
-    files=('core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py')
+    files=['core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py']
+    files += [str(path.relative_to(ROOT)) for path in sorted((ROOT/'providers').rglob('*.py'))]
     return hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in files)).hexdigest()[:12]
 
 def _aroll_batch_size(s):
@@ -35,13 +36,44 @@ def _aroll_batch_size(s):
     except (TypeError,ValueError): return 8
     return value if value in (1,2,4,8,16) else 8
 
+def _settings_defaults():
+    return {
+        'llm_provider':'deepseek','llm_api_key':'','llm_custom_name':'','llm_custom_base_url':'','llm_custom_model':'',
+        'broll_provider':'pexels','pexels_api_key':'','pixabay_api_key':'',
+        'aroll_provider':'musetalk','aroll_custom_type':'comfyui','aroll_batch_size':8,
+        'aroll_comfyui_url':'http://127.0.0.1:8188','aroll_comfyui_workflow':'','aroll_comfyui_workflow_hash':'',
+        'aroll_person_node':'','aroll_audio_node':'','aroll_output_node':'',
+        'aroll_external_name':'','aroll_external_url':'','aroll_external_api_key':'','aroll_external_model':'',
+        'asr_model':'base','asr_device':'auto','language':'zh',
+    }
+
+
+def _migrate_settings(raw):
+    """Upgrade the beta URL/model schema without dropping an existing secret."""
+    migrated=dict(raw);changed=False
+    if not migrated.get('llm_provider'):
+        old_url=str(migrated.get('llm_base_url') or 'https://api.deepseek.com').strip()
+        old_model=str(migrated.get('llm_model') or 'deepseek-v4-flash').strip()
+        if 'api.deepseek.com' in old_url.lower():
+            migrated['llm_provider']='deepseek'
+        else:
+            migrated.update(llm_provider='custom',llm_custom_name='旧版自定义服务',
+                            llm_custom_base_url=old_url,llm_custom_model=old_model)
+        changed=True
+    for legacy in ('llm_base_url','llm_model'):
+        if legacy in migrated: migrated.pop(legacy);changed=True
+    for key,value in (('broll_provider','pexels'),('aroll_provider','musetalk'),('aroll_custom_type','comfyui')):
+        if not migrated.get(key):migrated[key]=value;changed=True
+    return migrated,changed
+
+
 def settings(private=False):
-    s = {'llm_base_url': 'https://api.deepseek.com', 'llm_model': 'deepseek-v4-flash', 'llm_api_key': '', 'pexels_api_key': '',
-         'pixabay_api_key': '', 'asr_model': 'base', 'asr_device': 'auto', 'aroll_batch_size': 8,
-         'language': 'zh'}
+    s = _settings_defaults()
     path = PRIVATE / 'settings.json'
     if path.exists():
-        s.update(json.loads(path.read_text(encoding='utf-8')))
+        raw=json.loads(path.read_text(encoding='utf-8'));migrated,changed=_migrate_settings(raw);s.update(migrated)
+        if changed:
+            with LOCK: atomic_json(path,{k:s[k] for k in _settings_defaults()})
     if private:
         return s
     public = {k:v for k,v in s.items() if not k.endswith('api_key')}
@@ -56,9 +88,8 @@ def settings(private=False):
 
 def save_settings(values):
     path = PRIVATE / 'settings.json'
-    s = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
-    allowed = {'llm_base_url','llm_model','llm_api_key','pexels_api_key','pixabay_api_key',
-               'asr_model','asr_device','language','aroll_batch_size'}
+    s = settings(True)
+    allowed = set(_settings_defaults())
     for key, value in values.items():
         if key not in allowed: continue
         if key.endswith('api_key') and not value: continue
@@ -67,9 +98,14 @@ def save_settings(values):
     if s.get('asr_model', 'base') not in ('small','base','large-v3'): raise ValueError('请选择支持的转录模型')
     if s.get('asr_device', 'auto') not in ('auto','cpu','cuda'): raise ValueError('设备设置无效')
     if _aroll_batch_size(s)!=s.get('aroll_batch_size',8): raise ValueError('口型显存档位无效')
-    if not str(s.get('llm_base_url','')).startswith(('https://','http://')):raise ValueError('请填写 DeepSeek API 服务地址')
-    if not str(s.get('llm_model','')).strip():raise ValueError('请填写 DeepSeek 模型名')
-    with LOCK: atomic_json(path, s)
+    if s.get('broll_provider') not in ('pexels','pixabay'):raise ValueError('请选择支持的 B-roll 素材服务')
+    if s.get('aroll_provider') not in ('wav2lip','musetalk','custom'):raise ValueError('请选择支持的 A-roll 方案')
+    if s.get('aroll_custom_type') not in ('comfyui','external_api'):raise ValueError('请选择支持的自定义 A-roll 类型')
+    from providers.llm import resolve_llm_config
+    from providers.aroll import get_aroll_provider
+    resolve_llm_config(s)
+    if s.get('aroll_provider')=='custom':get_aroll_provider(s).validate_config()
+    with LOCK: atomic_json(path,{k:s[k] for k in _settings_defaults()})
     return settings()
 
 def cached_models():
@@ -122,7 +158,7 @@ def create_project(name):
     p = {'id':pid,'name':name.strip()[:120] or '未命名播客','created_at':time.time(),
          'updated_at':time.time(),'duration':0,'audio':None,'portrait':None,'segments':[],
          'candidate_segments':[],'narrative_segments':[],'shots':[],'waveform':[],'job':None,'exports':[], 'revision':0,
-         'options':{'broll_ratio':60,'max_shot':14,'subtitles':True,'resolution':'1080p','source':'pexels'},
+         'options':{'broll_ratio':60,'max_shot':14,'subtitles':True,'resolution':'1080p','source':'global'},
          'analysis':None}
     save_project(p)
     return p
@@ -261,6 +297,33 @@ def safe_error(exc):
     except Exception: pass
     return text[-1800:]
 
+
+def generation_preflight(p):
+    """Cheap local checks for one-click generation; never starts network or GPU work."""
+    from providers.llm import resolve_llm_config
+    from providers.broll import resolve_broll_config
+    from providers.aroll import get_aroll_provider
+    cfg=settings(True);issues=[]
+    if not p.get('audio') and not p.get('script'):
+        issues.append({'code':'source','message':'请先输入文稿或导入音频','action':'return'})
+    if not p.get('shots'):
+        try: resolve_llm_config(cfg,require_key=True)
+        except ValueError as exc: issues.append({'code':'llm','message':str(exc),'action':'settings'})
+    needs_broll=(not p.get('shots') and int(p.get('options',{}).get('broll_ratio',60))>0) or any(
+        shot.get('kind')=='B' and not shot.get('asset') for shot in p.get('shots',[]))
+    if needs_broll:
+        try: resolve_broll_config(cfg,require_key=True)
+        except ValueError as exc: issues.append({'code':'broll','message':str(exc),'action':'settings'})
+    provider=get_aroll_provider(cfg)
+    needs_aroll=not p.get('shots') or any(shot.get('kind')=='A' and not provider.is_ready(p,shot) for shot in p.get('shots',[]))
+    status=provider.status()
+    if needs_aroll and not status.get('ready'):
+        issues.append({'code':'aroll','message':f'当前 A-roll 组件尚未准备好：{provider.name}。{status.get("message","")}',
+                       'action':'install' if provider.id=='musetalk' else 'settings'})
+    return {'ok':not issues,'issues':issues,
+            'providers':{'llm':resolve_llm_config(cfg).get('name'),'broll':resolve_broll_config(cfg).get('name'),
+                         'aroll':provider.name,'aroll_short_name':provider.short_name}}
+
 def ensure_idle(pid):
     if pid in ACTIVE: raise ValueError('项目正在处理，请完成或停止后再编辑')
 
@@ -269,6 +332,9 @@ def start_job(pid, action, shot_id=None):
         ensure_idle(pid)
         if ACTIVE: raise ValueError('另一个项目正在处理，请等待完成后再开始')
         p=read_project(pid)
+        if action=='all':
+            check=generation_preflight(p)
+            if not check['ok']:raise ValueError(check['issues'][0]['message'])
         if action not in ('tts','setup_models','transcribe','plan','materials','aroll','render','all'): raise ValueError('操作无效')
         if action not in ('tts','setup_models') and not p.get('audio') and not (action=='all' and p.get('script')): raise ValueError('请先输入原稿或导入音频')
         if action=='tts' and not p.get('script'):raise ValueError('请先输入并保存配音原稿')
@@ -286,7 +352,7 @@ def start_job(pid, action, shot_id=None):
 def job_worker(pid,action,shot_id=None):
     try:
         import local_engines
-        if action=='setup_models': local_engines.install(pid)
+        if action=='setup_models': local_engines.install_aroll(pid)
         p=read_project(pid)
         synthesized=action=='tts' or (action=='all' and local_engines.needs_tts(p))
         if synthesized:local_engines.synthesize(pid)
@@ -296,8 +362,8 @@ def job_worker(pid,action,shot_id=None):
         if action=='plan' or (action=='all' and not p['shots']): plan(pid)
         if action in ('materials','all'): materials(pid)
         if action in ('aroll','render','all'):
-            import aroll
-            aroll.generate(pid,shot_id)
+            from providers.aroll import get_aroll_provider
+            get_aroll_provider(settings(True)).generate(pid,shot_id)
         if action in ('render','all'): render(pid)
         with LOCK:
             p=read_project(pid)
@@ -350,7 +416,6 @@ def transcribe(pid):
         out.unlink(missing_ok=True); status.unlink(missing_ok=True);reference.unlink(missing_ok=True)
 
 def chat_json(cfg, messages, report=None, diagnostic=None):
-    if not cfg['llm_base_url'] or not cfg['llm_model']: raise ValueError('请在设置里配置语义分析模型')
     from model_client import request_json
     return request_json(cfg,messages,report=report,diagnostic=diagnostic)
 
@@ -645,8 +710,8 @@ validate_local_editorial_quality = validate_editorial_quality  # 兼容旧引用
 
 
 def plan(pid):
-    cfg=settings(True)
-    if not cfg.get('llm_api_key'):raise ValueError('请先在「连接与设置」填写 DeepSeek API Key')
+    from providers.llm import resolve_llm_config
+    cfg=resolve_llm_config(settings(True),require_key=True)
     return _plan(pid,cfg)
 
 def _plan(pid,cfg):
@@ -685,7 +750,7 @@ visual_subject 写这一段明确、可看见、可搜索的主体；没有具�
     b_seconds=sum(s['end']-s['start'] for s in shots if s['kind']=='B')
     with LOCK:
         p=read_project(pid);p['candidate_segments']=copy.deepcopy(candidates);p['narrative_segments']=narratives;p['shots']=shots;p['revision']+=1
-        p['analysis']={'mode':'semantic-dual-value-rules','model':cfg['llm_model'],'backend':'deepseek-api','rules_version':rules['version'],
+        p['analysis']={'mode':'semantic-dual-value-rules','model':cfg['model'],'backend':cfg['provider'],'provider_name':cfg['name'],'rules_version':rules['version'],
                        'llm_role':'semantic_classification_only','candidate_count':len(candidates),'narrative_count':len(narratives),
                        'visual_shot_count':len(shots),'broll_ratio_actual':round(100*b_seconds/max(p['duration'],.001),1),
                        'rules_file':'storyboard_rules.json',
@@ -758,7 +823,8 @@ def download_candidate(pid,c):
     return str(path.relative_to(project_dir(pid))).replace('\\','/')
 
 def materials(pid):
-    p=read_project(pid); cfg=settings(True); shots=[s for s in p['shots'] if s['kind']=='B']; source=p['options']['source']
+    from providers.broll import resolve_broll_config
+    p=read_project(pid); cfg=settings(True); shots=[s for s in p['shots'] if s['kind']=='B']; source=resolve_broll_config(cfg)['provider']
     used={s.get('source',{}).get('id') for s in shots if s.get('source')}
     for i,shot in enumerate(shots):
         progress(pid,'匹配素材',5+90*i/max(1,len(shots)),f'B-roll {i+1}/{len(shots)} · {shot["title"]}')
@@ -853,10 +919,11 @@ def framing_filter(width,height,fps,frames,camera=None,motion=None,motion_zoom=.
     return chain+f',setsar=1,fps={fps}'
 
 def render(pid):
-    import aroll
+    from providers.aroll import get_aroll_provider
     import storyboard as sb
     p=read_project(pid); validate_timeline(p['shots'],p['duration']); folder=project_dir(pid)
-    if any(s['kind']=='A' and not aroll.is_ready(p,s) for s in p['shots']):raise ValueError('A-roll 口型视频尚未生成或已过期，请先生成口型')
+    provider=get_aroll_provider(settings(True))
+    if any(s['kind']=='A' and not provider.is_ready(p,s) for s in p['shots']):raise ValueError('A-roll 口型视频尚未生成或已过期，请先生成口型')
     export=folder/'exports'/f'{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:4]}'
     export.mkdir(); width,height=(1920,1080) if p['options']['resolution']=='1080p' else (1280,720)
     image=host_image(p); fps=30; cache=folder/'render-cache'; cache.mkdir(exist_ok=True); clips=[]; actual=[]

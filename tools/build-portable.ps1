@@ -75,6 +75,7 @@ foreach ($name in $rootFiles) {
     }
 }
 Copy-Tree (Join-Path $root 'static') (Join-Path $app 'static')
+Copy-Tree (Join-Path $root 'providers') (Join-Path $app 'providers')
 Ensure-Directory (Join-Path $app 'assets\hosts')
 foreach ($assetName in @('solo-host-v1-1080.jpg')) {
     $asset = Join-Path $root "assets\hosts\$assetName"

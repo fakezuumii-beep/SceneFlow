@@ -3,7 +3,7 @@ from unittest.mock import patch,Mock
 import requests
 import model_client as m
 
-CFG={'llm_base_url':'https://api.deepseek.com','llm_model':'deepseek-v4-flash','llm_api_key':'secret'}
+CFG={'provider':'deepseek','name':'DeepSeek','base_url':'https://api.deepseek.com','model':'deepseek-v4-flash','api_key':'secret','type':'openai-compatible','request_options':{'thinking':{'type':'disabled'}}}
 MESSAGES=[{'role':'user','content':'return JSON'}]
 def response(content='{"shots":[]}', finish='stop', status=200, raw=None):
     r=requests.Response();r.status_code=status;r.headers['content-type']='application/json'

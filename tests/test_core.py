@@ -106,7 +106,7 @@ class TimelineTests(unittest.TestCase):
         responses=[{'segments':[semantic(unit) for unit in units[:45]]},
                    {'segments':[semantic(unit) for unit in units[45:]]}]
         with patch.object(core,'read_project',side_effect=lambda _:copy.deepcopy(p)), \
-             patch.object(core,'settings',return_value={'llm_model':'test','llm_api_key':'key'}), \
+             patch.object(core,'settings',return_value={'llm_provider':'deepseek','llm_api_key':'key'}), \
              patch.object(core,'progress'), patch.object(core,'save_project') as save, \
              patch.object(core,'chat_json',side_effect=responses) as chat:
             core.plan('test')

@@ -3,7 +3,6 @@ import copy
 import json
 import re
 import time
-from urllib.parse import urlsplit
 import requests
 
 
@@ -31,19 +30,18 @@ def parse_content(content):
 
 
 def request_json(cfg, messages, report=None, diagnostic=None, attempts=3):
-    url = cfg['llm_base_url'].rstrip('/') + '/chat/completions'
+    url = cfg['base_url'].rstrip('/') + '/chat/completions'
     headers = {'Content-Type': 'application/json'}
-    if cfg['llm_api_key']:
-        headers['Authorization'] = 'Bearer ' + cfg['llm_api_key']
-    payload = {'model': cfg['llm_model'], 'messages': copy.deepcopy(messages),
+    if cfg['api_key']:
+        headers['Authorization'] = 'Bearer ' + cfg['api_key']
+    payload = {'model': cfg['model'], 'messages': copy.deepcopy(messages),
                'temperature': .2, 'max_tokens': 6000, 'response_format': {'type': 'json_object'}}
-    if urlsplit(url).hostname == 'api.deepseek.com':
-        payload['thinking'] = {'type': 'disabled'}
+    payload.update(copy.deepcopy(cfg.get('request_options') or {}))
     last = None
     for attempt in range(attempts):
         if report:
             report(f'正在请求语义分镜（第 {attempt+1}/{attempts} 次）' if not last else f'{last}；正在自动重试（第 {attempt+1}/{attempts} 次）')
-        meta = {'attempt': attempt+1, 'model': cfg['llm_model']}
+        meta = {'attempt': attempt+1, 'provider': cfg['provider'], 'model': cfg['model']}
         began = time.monotonic()
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=(10,90))

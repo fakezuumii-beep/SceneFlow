@@ -21,7 +21,7 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
     ↓
 按语义生成镜头时间线，匹配人物与 B-roll
     ↓
-MuseTalk 生成人物口型 + 字幕
+所选 A-roll Provider 生成人物口型 + 字幕
     ↓
 16:9 MP4、SRT 与镜头来源清单
 ```
@@ -32,21 +32,22 @@ MuseTalk 生成人物口型 + 字幕
 | --- | --- |
 | 连续配音 | Azure TTS V1 生成完整音轨；失败重试会复用已完成片段。 |
 | 真实时间轴 | faster-whisper 为文稿/音频生成词级时间，镜头边界跟随真实停顿与语义节点。 |
-| 智能分镜 | DeepSeek 只判断语义与可视化对象；程序统一决定人物出镜、B-roll 占比和镜头节奏。 |
-| 画面素材 | 根据具体可视化对象检索 Pexels，也能逐镜换片或导入本地图片/视频。 |
-| 人物口型 | 独立 MuseTalk 1.5 为 A-roll 生成与原音频对应的口型视频。 |
+| 智能分镜 | 默认由 DeepSeek 判断语义与可视化对象，也可连接自定义 OpenAI 兼容服务；程序统一决定人物出镜、B-roll 占比和镜头节奏。 |
+| 画面素材 | 根据具体可视化对象检索 Pexels 或 Pixabay，也能逐镜换片或导入本地图片/视频。 |
+| 人物口型 | 可选择轻量本地 Wav2Lip、高质量本地 MuseTalk 1.5，或配置 ComfyUI / 在线 API 自定义工作流。当前完整本地生成链由 MuseTalk 提供。 |
 | 最终交付 | 导出 16:9 MP4、字幕 SRT，以及可追溯的镜头和素材来源清单。 |
 
 ## 技术范围
 
 一个面向普通创作者的本地音频转视频应用。输入中文原稿或导入音频，工作台会完成配音/转录、语义分镜、B-roll 搜索、人物口型、字幕与 MP4 导出。
 
-发布版需要两个用户自行填写的在线连接：
+在「连接与设置」中选择所需服务：
 
-- DeepSeek API：只判断候选文字的语义类型、可视化对象、重要性与情绪。
-- Pexels API：搜索并下载可用的 B-roll 视频。
+- 分镜 AI：默认支持 DeepSeek，只填写 API Key；高级用户也可以配置 OpenAI 兼容服务。
+- B-roll：支持 Pexels / Pixabay，选择素材源后只填写对应 API Key。
+- A-roll：支持轻量本地、高质量本地和自定义工作流三档。Wav2Lip 的模型和代码受非商业使用限制，不随主 Portable 打包。
 
-文字配音使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。语义分镜固定使用 DeepSeek API；工作台不会启动或访问外部工作流服务。
+文字配音使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。只有用户主动选择并配置自定义 A-roll 时，工作台才会测试对应的 ComfyUI 或在线服务。
 
 ## 能做什么
 
@@ -116,9 +117,9 @@ PowerShell 也可以直接运行源码安装脚本：
 .\安装工作台.ps1 -SkipModels
 ```
 
-## API 设置
+## 连接与设置
 
-默认使用 DeepSeek 官方兼容地址与模型：
+普通用户只需理解三个选择：DeepSeek 填 Key、Pexels 填 Key、A-roll 选择一种。DeepSeek 官方地址和项目已验证模型由程序内置，不在默认设置页暴露：
 
 ```text
 API 地址：https://api.deepseek.com
@@ -127,7 +128,13 @@ API 地址：https://api.deepseek.com
 
 密钥写入 `data/private/settings.json`。`data/` 已在 `.gitignore` 中，项目 JSON、日志、错误信息和导出清单也不会写入或回显密钥。
 
-Pexels 是默认素材源。Pixabay 保留为可选替代源；只配置 DeepSeek 与 Pexels 就能走完整的一键流程，Azure TTS V1 本身不需要填写 Key。
+Pexels 是默认素材源，Pixabay 是可选替代源。Whisper 模型、运行设备和 MuseTalk 显存档位收在折叠的「高级设置」内。所有密钥输入在重新打开时只显示遮罩；留空保存会保留原密钥。
+
+A-roll 三档为：
+
+- 轻量本地 · Wav2Lip：按需安装入口与许可证警示；仅限个人、研究和非商业用途。
+- 高质量本地 · MuseTalk 1.5：复用现有独立引擎、断点续传安装器和缓存。
+- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SOLO External A-roll API 配置。当前版本尚未开放这三类新增适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
 
 ## 文字配音
 
@@ -161,6 +168,7 @@ azure_tts_worker.py       Azure TTS V1 分段请求、重试、缓存与 WAV 合
 aroll.py                  独立 MuseTalk 调度、缓存与校验
 musetalk_worker.py        无 ComfyUI 的 MuseTalk 推理进程
 engine_setup.py           可续传的源码、运行时与权重安装器
+providers/                LLM、B-roll 与 A-roll Provider 注册、解析、状态和缓存身份
 data/                     私有设置、项目、缓存、日志（不提交）
 engines/                  下载的 MuseTalk 环境、源码与权重（不提交）
 .runtime/                 自动安装的 Python/FFmpeg 引导工具与 FFmpeg（不提交）

@@ -54,7 +54,7 @@ class LocalEngineTests(unittest.TestCase):
             with self.assertRaises(ValueError):le.validate_script(value)
 
     def test_deepseek_json_disables_thinking_and_preserves_config(self):
-        cfg={'llm_base_url':'https://api.deepseek.com','llm_model':'deepseek-v4-flash','llm_api_key':'token'}
+        cfg={'provider':'deepseek','name':'DeepSeek','base_url':'https://api.deepseek.com','model':'deepseek-v4-flash','api_key':'token','type':'openai-compatible','request_options':{'thinking':{'type':'disabled'}}}
         before=copy.deepcopy(cfg);response=Mock(status_code=200,headers={},content=b'{}')
         response.json.return_value={'choices':[{'finish_reason':'stop','message':{'content':'{"shots":[]}'}}]}
         with patch('model_client.requests.post',return_value=response) as post:
