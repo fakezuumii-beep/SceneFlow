@@ -42,13 +42,21 @@
 
 **下面两段都是作者用 SceneFlow 在本地运行生成的案例，人物口型使用 MuseTalk。** 没有用付费云端视频模型替代演示中的人物生成；部分联网服务的使用范围见上方说明。
 
-点击封面或“观看示例”打开视频文件页；如果浏览器未显示播放器，可选择下载原片观看。
+点击下方播放器的 **▶**，即可在本页直接观看，支持声音、进度拖动和全屏播放。
 
-| 示例 1 · 约 36 秒 | 示例 2 · 约 45 秒 |
-| :---: | :---: |
-| [![播放示例 1：SceneFlow 本地生成案例](docs/showcase/demo-1-cover.jpg)](docs/showcase/demo-1.mp4) | [![播放示例 2：SceneFlow 本地生成案例](docs/showcase/demo-2-cover.jpg)](docs/showcase/demo-2.mp4) |
-| **[▶ 观看示例 1](docs/showcase/demo-1.mp4)** · [下载原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-1.mp4) | **[▶ 观看示例 2](docs/showcase/demo-2.mp4)** · [下载原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-2.mp4) |
-| 1920 × 1080 · MP4 · MuseTalk 本地口型 | 1920 × 1080 · MP4 · MuseTalk 本地口型 |
+### 示例 1 · 约 36 秒
+
+https://github.com/user-attachments/assets/c6d29653-15c4-4c25-b912-faec5f52b84f
+
+1920 × 1080 · MuseTalk 本地口型 · [下载高清原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-1.mp4)
+
+### 示例 2 · 约 45 秒
+
+https://github.com/user-attachments/assets/b1a256f4-0b80-4236-ae8f-8897c723cffd
+
+1920 × 1080 · MuseTalk 本地口型 · [下载高清原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-2.mp4)
+
+*在线播放版经过体积优化，保留完整内容与音频；上方下载链接提供原始导出文件。*
 
 ## 🖼️ 从输入到成片，四张图就看懂
 
