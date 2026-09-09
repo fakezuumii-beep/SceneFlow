@@ -7,12 +7,12 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $root
 
-if (-not [Environment]::Is64BitOperatingSystem) { throw 'SOLO Portable 构建只支持 Windows x64。' }
+if (-not [Environment]::Is64BitOperatingSystem) { throw 'SceneFlow Portable 构建只支持 Windows x64。' }
 $buildRoot = Join-Path $root '.release-build'
 $cacheRoot = Join-Path $buildRoot 'cache'
 $stageRoot = Join-Path $buildRoot 'stage'
 $artifactRoot = Join-Path $buildRoot 'artifacts'
-$packageName = "SOLO-Portable-$Version-Windows-x64"
+$packageName = "SceneFlow-Portable-$Version-Windows-x64"
 $stage = Join-Path $stageRoot $packageName
 $app = Join-Path $stage 'app'
 $runtime = Join-Path $app '.runtime'
@@ -77,10 +77,18 @@ foreach ($name in $rootFiles) {
 Copy-Tree (Join-Path $root 'static') (Join-Path $app 'static')
 Copy-Tree (Join-Path $root 'providers') (Join-Path $app 'providers')
 Ensure-Directory (Join-Path $app 'assets\hosts')
-foreach ($assetName in @('solo-host-v1-1080.jpg')) {
+$hostAssetNames = @(
+    'solo-host-v1-1080.jpg',
+    'sceneflow-host-female-loop-v1.mp4',
+    'sceneflow-host-male-loop-v1.mp4'
+)
+$hostAssetRecords = @()
+foreach ($assetName in $hostAssetNames) {
     $asset = Join-Path $root "assets\hosts\$assetName"
     if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "内置主持人素材缺失：$assetName" }
-    Copy-Item -LiteralPath $asset -Destination (Join-Path $app "assets\hosts\$assetName") -Force
+    $destination = Join-Path $app "assets\hosts\$assetName"
+    Copy-Item -LiteralPath $asset -Destination $destination -Force
+    $hostAssetRecords += [ordered]@{ file=$assetName; size=(Get-Item -LiteralPath $destination).Length; sha256=(Hash $destination) }
 }
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination (Join-Path $stage 'LICENSE') -Force
 Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination (Join-Path $stage 'THIRD_PARTY_NOTICES.md') -Force
@@ -177,17 +185,17 @@ foreach ($name in $modelFiles) {
 
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $csc)) { throw '缺少 Windows C# 编译器（Framework64 csc.exe）。' }
-$launcherOutput = Join-Path $stage 'SOLO.exe'
+$launcherOutput = Join-Path $stage 'SceneFlow.exe'
 & $csc /nologo /target:winexe /platform:x64 /optimize+ /out:$launcherOutput /reference:System.Windows.Forms.dll /reference:System.Drawing.dll (Join-Path $root 'launcher\SOLOLauncher.cs')
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $launcherOutput)) { throw 'SOLO.exe 构建失败。' }
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $launcherOutput)) { throw 'SceneFlow.exe 构建失败。' }
 
 $instructions = @'
-SOLO v0.1.0-beta.1 · Windows 10/11 x64
+SceneFlow v0.1.0-beta.1 · Windows 10/11 x64
 
 开始使用
-1. 将整个文件夹解压到普通文件夹（不要只拖出 SOLO.exe）。
-2. 双击 SOLO.exe。
-3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SOLO。
+1. 将整个文件夹解压到普通文件夹（不要只拖出 SceneFlow.exe）。
+2. 双击 SceneFlow.exe。
+3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SceneFlow。
 4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key。
 
 你不需要安装 Python、FFmpeg、uv，也不需要打开 PowerShell。
@@ -207,8 +215,9 @@ $manifest = [ordered]@{
     ffmpeg='9.0.1-essentials'; faster_whisper='base'; whisper_revision=$whisperRevision;
     source_commit=$sourceCommit; built_at=[DateTime]::UtcNow.ToString('o');
     git_dirty=[bool]$gitStatus.Count; wheel_count=$wheelCount;
+    built_in_hosts=$hostAssetRecords;
     key_files=[ordered]@{
-        'SOLO.exe'=(Hash (Join-Path $stage 'SOLO.exe'));
+        'SceneFlow.exe'=(Hash (Join-Path $stage 'SceneFlow.exe'));
         'app/.runtime/ffmpeg/bin/ffmpeg.exe'=(Hash (Join-Path $runtime 'ffmpeg\bin\ffmpeg.exe'));
         'app/.runtime/ffmpeg/bin/ffprobe.exe'=(Hash (Join-Path $runtime 'ffmpeg\bin\ffprobe.exe'));
         'app/engines/faster-whisper/base/model.bin'=(Hash (Join-Path $modelRoot 'model.bin'))
@@ -236,6 +245,13 @@ if (-not $SkipSmokeTest) {
     $smokeData = Join-Path $smoke 'data'
     $smokeRuntimePython = Join-Path $smokeApp '.runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe'
     $smokePython = Join-Path $smokeApp '.venv\Scripts\python.exe'
+    foreach ($assetName in $hostAssetNames) {
+        $expected = Join-Path $root "assets\hosts\$assetName"
+        $actual = Join-Path $smokeApp "assets\hosts\$assetName"
+        if (-not (Test-Path -LiteralPath $actual -PathType Leaf) -or (Hash $actual) -ne (Hash $expected)) {
+            throw "Portable 内置主持人素材校验失败：$assetName"
+        }
+    }
     $env:SOLO_DATA_DIR = $smokeData
     $env:SOLO_PORTABLE = '1'
     $env:SOLO_PORT = '18766'

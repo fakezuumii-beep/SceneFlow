@@ -26,4 +26,6 @@ assets/hosts/*.jpg
 assets/hosts/*.jpeg
 assets/hosts/*.png
 assets/hosts/*.mp4
+!assets/hosts/sceneflow-host-female-loop-v1.mp4
+!assets/hosts/sceneflow-host-male-loop-v1.mp4
 *.part

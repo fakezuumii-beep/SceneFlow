@@ -42,7 +42,7 @@ internal sealed class LauncherForm : Form
         if (!Int32.TryParse(Environment.GetEnvironmentVariable("SOLO_PORT"), out configuredPort) || configuredPort < 1024 || configuredPort > 65535) configuredPort = 8766;
         port = configuredPort;
         Directory.CreateDirectory(Path.Combine(data, "logs"));
-        Text = "SOLO";
+        Text = "SceneFlow";
         Width = 520;
         Height = 390;
         MinimumSize = new Size(460, 330);
@@ -51,7 +51,7 @@ internal sealed class LauncherForm : Form
         Font = new Font("Microsoft YaHei UI", 10F);
 
         var title = new Label();
-        title.Text = "SOLO\r\n\u5355\u4eba\u64ad\u5ba2\u5de5\u4f5c\u53f0";
+        title.Text = "SceneFlow\r\n\u5355\u4eba\u64ad\u5ba2\u5de5\u4f5c\u53f0";
         title.Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Bold);
         title.ForeColor = Color.FromArgb(42, 68, 56);
         title.AutoSize = true;
@@ -186,7 +186,7 @@ internal sealed class LauncherForm : Form
             Environment.SetEnvironmentVariable("PYTHONUTF8", "1");
             string ffbin = Path.Combine(app, ".runtime", "ffmpeg", "bin");
             Environment.SetEnvironmentVariable("PATH", ffbin + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH"));
-            Add("SOLO Portable v0.1.0-beta.1");
+            Add("SceneFlow Portable v0.1.0-beta.1");
             Add("\u5e94\u7528\u76ee\u5f55: " + app);
             SetStatus("\u6b63\u5728\u68c0\u67e5\u6838\u5fc3\u6587\u4ef6...");
             if (!CoreFilesPresent())
@@ -197,20 +197,20 @@ internal sealed class LauncherForm : Form
                 if (code != 0 || !CoreFilesPresent()) throw new Exception("\u4fbf\u643a\u7248\u6838\u5fc3\u73af\u5883\u51c6\u5907\u5931\u8d25\u3002");
             }
             else Add("\u6838\u5fc3\u6587\u4ef6\u5df2\u5b8c\u6574\u3002");
-            SetStatus("\u6b63\u5728\u542f\u52a8 SOLO \u5de5\u4f5c\u53f0...");
+            SetStatus("\u6b63\u5728\u542f\u52a8 SceneFlow \u5de5\u4f5c\u53f0...");
             if (!WaitHealth(1)) StartServer();
             if (!WaitHealth(30)) throw new Exception("\u7aef\u53e3 " + port.ToString() + " \u65e0\u6cd5\u542f\u52a8\uff0c\u8bf7\u67e5\u770b data\\logs\\server-error.log\u3002");
             Add("/health \u68c0\u67e5\u6210\u529f\u3002");
             SetStatus("\u5de5\u4f5c\u53f0\u5df2\u542f\u52a8\uff0c\u6b63\u5728\u6253\u5f00\u6d4f\u89c8\u5668...");
             Process.Start(new ProcessStartInfo("http://127.0.0.1:" + port.ToString()) { UseShellExecute = true });
-            SetStatus("SOLO \u5df2\u5c31\u7eea\uff0c\u53ef\u4ee5\u5173\u95ed\u6b64\u7a97\u53e3\u3002");
+            SetStatus("SceneFlow \u5df2\u5c31\u7eea\uff0c\u53ef\u4ee5\u5173\u95ed\u6b64\u7a97\u53e3\u3002");
         }
         catch (Exception ex)
         {
             Add("ERROR: " + ex.ToString());
-            SetStatus("SOLO \u542f\u52a8\u5931\u8d25");
+            SetStatus("SceneFlow \u542f\u52a8\u5931\u8d25");
             if (!IsDisposed)
-                BeginInvoke((Action)delegate { MessageBox.Show(this, "SOLO \u542f\u52a8\u5931\u8d25\r\n\r\n\u6838\u5fc3\u8fd0\u884c\u73af\u5883\u4e0d\u5b8c\u6574\u6216\u7aef\u53e3\u65e0\u6cd5\u542f\u52a8\u3002\r\n\u8be6\u7ec6\u65e5\u5fd7\uff1adata\\logs\\launcher.log", "SOLO", MessageBoxButtons.OK, MessageBoxIcon.Error); });
+                BeginInvoke((Action)delegate { MessageBox.Show(this, "SceneFlow \u542f\u52a8\u5931\u8d25\r\n\r\n\u6838\u5fc3\u8fd0\u884c\u73af\u5883\u4e0d\u5b8c\u6574\u6216\u7aef\u53e3\u65e0\u6cd5\u542f\u52a8\u3002\r\n\u8be6\u7ec6\u65e5\u5fd7\uff1adata\\logs\\launcher.log", "SceneFlow", MessageBoxButtons.OK, MessageBoxIcon.Error); });
         }
     }
 

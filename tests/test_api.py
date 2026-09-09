@@ -6,7 +6,21 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import core, server
 
 class ApiTests(TestCase):
-    def test_default_host_uses_the_personal_loop_video(self):
+    def test_builtin_host_videos_are_available_from_the_picker(self):
+        items=self.client.get('/api/host-materials').json()
+        names={item['name'] for item in items}
+        self.assertIn('builtin:sceneflow-host-female-loop-v1.mp4',names)
+        self.assertIn('builtin:sceneflow-host-male-loop-v1.mp4',names)
+        self.assertTrue(all(item.get('label') for item in items))
+
+    def test_builtin_host_video_can_be_selected(self):
+        r=self.client.post(f'/api/projects/{self.pid}/host-material',json={'name':'builtin:sceneflow-host-male-loop-v1.mp4'})
+        self.assertEqual(r.status_code,200,r.text)
+        p=self.client.get(f'/api/projects/{self.pid}').json()
+        self.assertEqual(p['portrait_name'],'sceneflow-host-male-loop-v1.mp4')
+        self.assertEqual(p['host_media_kind'],'video')
+
+    def test_default_host_uses_the_configured_loop_video(self):
         source=self.root/'default-loop.mp4'
         core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','testsrc2=s=64x64:r=25:d=0.4',
                   '-c:v','libx264','-pix_fmt','yuv420p',source])

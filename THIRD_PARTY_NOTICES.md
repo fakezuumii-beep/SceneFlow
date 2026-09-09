@@ -18,8 +18,8 @@ Keep upstream license files and model cards when redistributing any downloaded f
 
 ## Optional Wav2Lip component
 
-Wav2Lip is installed only after an explicit acknowledgement in SOLO. Its source,
+Wav2Lip is installed only after an explicit acknowledgement in SceneFlow. Its source,
 independent Python runtime, S3FD detector and public checkpoint are not included
-in the main SOLO Portable archive. The upstream terms are independent of SOLO's
+in the main SceneFlow Portable archive. The upstream terms are independent of SceneFlow's
 MIT License and the acknowledgement only records that the user saw the notice;
 it does not grant or represent a commercial license.

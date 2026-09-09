@@ -20,10 +20,14 @@ LOCAL_FFMPEG = ROOT/'.runtime'/'ffmpeg'/'bin'/'ffmpeg.exe'
 LOCAL_FFPROBE = ROOT/'.runtime'/'ffmpeg'/'bin'/'ffprobe.exe'
 FFMPEG = str(LOCAL_FFMPEG) if LOCAL_FFMPEG.is_file() else (shutil.which('ffmpeg') or 'ffmpeg')
 FFPROBE = str(LOCAL_FFPROBE) if LOCAL_FFPROBE.is_file() else (shutil.which('ffprobe') or 'ffprobe')
-# The personal loop is deliberately kept outside project folders.  A project gets
-# an immutable copy on first use, so changing the library file never invalidates
-# an in-progress episode.
-DEFAULT_LOOP_VIDEO = ROOT/'我的素材'/'循环视频.mp4'
+# Built-in host media is immutable application content.  Each project still gets
+# its own copy on first use, so an application update never changes an episode
+# that has already started rendering.
+BUILTIN_HOST_VIDEOS = (
+    {'filename':'sceneflow-host-female-loop-v1.mp4','label':'SceneFlow 内置女主持 · 循环视频'},
+    {'filename':'sceneflow-host-male-loop-v1.mp4','label':'SceneFlow 内置男主持 · 循环视频'},
+)
+DEFAULT_LOOP_VIDEO = ROOT/'assets'/'hosts'/BUILTIN_HOST_VIDEOS[0]['filename']
 
 def code_revision():
     files=['core.py','storyboard.py','storyboard_rules.json','server.py','atomic_files.py','aroll.py','musetalk_worker.py','wav2lip_worker.py','wav2lip_setup.py','worker_progress.py','model_client.py','transcribe.py','speech_units.py','local_engines.py','tts_common.py','azure_tts_worker.py','engine_setup.py','requirements-wav2lip.txt']
@@ -229,7 +233,7 @@ def placeholder(path):
     font_path=Path('C:/Windows/Fonts/msyh.ttc')
     if font_path.exists():
         font=ImageFont.truetype(str(font_path),32)
-        d.text((210,132),'SOLO / 单人播客',font=font,fill='#d9e0cf')
+        d.text((210,132),'SceneFlow / 单人播客',font=font,fill='#d9e0cf')
         d.text((130,212),'人物图占位 · 上传图片后替换',font=font,fill='#b0c3b3')
     im.save(path)
 

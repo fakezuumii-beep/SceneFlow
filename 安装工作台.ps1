@@ -4,7 +4,7 @@ Set-Location -LiteralPath $PSScriptRoot
 
 $portableMode = $Portable -or $env:SOLO_PORTABLE -eq '1'
 if ($portableMode -and -not [Environment]::Is64BitOperatingSystem) {
-    throw 'SOLO Portable 仅支持 Windows 10/11 x64。'
+    throw 'SceneFlow Portable 仅支持 Windows 10/11 x64。'
 }
 
 $runtime = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
@@ -26,7 +26,7 @@ function Download-File([string]$Url, [string]$Target) {
 
 function Ensure-Uv {
     if (Test-Path -LiteralPath $uvPath) { return $uvPath }
-    if ($portableMode) { throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 uv。' }
+    if ($portableMode) { throw 'Portable 核心文件不完整，请重新下载 SceneFlow Portable。缺少 uv。' }
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
 
@@ -63,7 +63,7 @@ function Ensure-Python {
         Write-Host '正在使用随包附带的 Python 3.12.10 创建项目独立环境…'
         & $uv venv .venv --python $bundledPython
     } elseif ($portableMode) {
-        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 Python Runtime。'
+        throw 'Portable 核心文件不完整，请重新下载 SceneFlow Portable。缺少 Python Runtime。'
     } else {
         Write-Host '正在自动下载 Python 3.12.10 并创建项目独立环境…'
         & $uv venv .venv --python 3.12.10
@@ -78,7 +78,7 @@ function Ensure-FFmpeg {
     $localFfprobe = Join-Path $ffmpegBin 'ffprobe.exe'
     if ($portableMode) {
         if ((Test-Path -LiteralPath $localFfmpeg) -and (Test-Path -LiteralPath $localFfprobe)) { return }
-        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 FFmpeg。'
+        throw 'Portable 核心文件不完整，请重新下载 SceneFlow Portable。缺少 FFmpeg。'
     }
     $systemFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
     $systemFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
@@ -120,7 +120,7 @@ Ensure-FFmpeg
 
 $uv = Ensure-Uv
 if ($portableMode -and -not (Test-Path -LiteralPath $mainWheelhouse)) {
-    throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少离线依赖。'
+    throw 'Portable 核心文件不完整，请重新下载 SceneFlow Portable。缺少离线依赖。'
 }
 if (Test-Path -LiteralPath $mainWheelhouse) {
     Write-Host '正在从随包依赖安装工作台环境…'
@@ -133,7 +133,7 @@ if ($portableMode) {
     $packagedModel = Join-Path $PSScriptRoot 'engines\faster-whisper\base'
     $requiredModelFiles = @('model.bin','config.json','tokenizer.json','vocabulary.txt')
     if (-not (Test-Path -LiteralPath $packagedModel) -or ($requiredModelFiles | Where-Object { -not (Test-Path -LiteralPath (Join-Path $packagedModel $_)) })) {
-        throw 'Portable 核心文件不完整，请重新下载 SOLO Portable。缺少 Whisper Base。'
+        throw 'Portable 核心文件不完整，请重新下载 SceneFlow Portable。缺少 Whisper Base。'
     }
 }
 if (-not $SkipModels) {
@@ -145,4 +145,4 @@ if (-not $SkipModels) {
 if (Test-Path -LiteralPath $uvPath) {
     & $uvPath cache clean | Out-Host
 }
-Write-Host '安装完成。Python 与 FFmpeg 均由工作台独立管理；填写 DeepSeek 与 Pexels API Key 后，双击 SOLO.exe 开始创作。'
+Write-Host '安装完成。Python 与 FFmpeg 均由工作台独立管理；填写 DeepSeek 与 Pexels API Key 后，双击 SceneFlow.exe 开始创作。'

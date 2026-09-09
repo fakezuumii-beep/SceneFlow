@@ -36,4 +36,4 @@ class ExternalApiProvider(ArollProvider):
                 'service': self.settings.get('aroll_external_name'), 'url': self.settings.get('aroll_external_url')}
 
     def generate(self, pid, shot_id=None):
-        raise ValueError('在线 A-roll 连接校验已可用；SOLO External A-roll 生成协议将在后续版本开放')
+        raise ValueError('在线 A-roll 连接校验已可用；SceneFlow External A-roll 生成协议将在后续版本开放')

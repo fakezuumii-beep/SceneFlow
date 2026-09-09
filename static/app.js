@@ -93,7 +93,7 @@ function renderAll(){
     const url=hostMedia();if(hostVideo.getAttribute('src')!==url){hostVideo.src=url;hostVideo.load()}
     hostVideo.play().catch(()=>{});
   }else{hostVideo.pause();hostVideo.removeAttribute('src');hostVideo.load()}
-  $('#portraitLabel').textContent=p.portrait_name?`${p.portrait_name}${hostIsVideo()?' · '+Number(p.portrait_duration).toFixed(1)+' 秒 · 循环视频':' · 图片'}`:(hostIsVideo()?'默认循环视频 · 我的素材/循环视频.mp4':'默认播客主持人 · 单人正脸清晰');
+  $('#portraitLabel').textContent=p.portrait_name?`${p.portrait_name}${hostIsVideo()?' · '+Number(p.portrait_duration).toFixed(1)+' 秒 · 循环视频':' · 图片'}`:(hostIsVideo()?'SceneFlow 内置女主持 · 默认循环视频':'默认播客主持人 · 单人正脸清晰');
   $('#totalTime').textContent=fmt(p.duration);$('#scrubber').max=p.duration||100;
   $('#ratio').value=p.options.broll_ratio;syncRatioUi(p.options.broll_ratio);
   $('#resolution').value=p.options.resolution;$('#subtitlesToggle').checked=p.options.subtitles;renderProviderSummaries();
@@ -291,7 +291,7 @@ $('#useHostMaterial').onclick=()=>guarded(async()=>{
   try{await api('/projects/'+pid()+'/host-material',{method:'POST',body:JSON.stringify({name:$('#hostMaterial').value})});await reload();toast('人物素材已更新，可生成 A-roll 口型')}
   finally{state.pending--;renderStatus()}
 });
-api('/host-materials').then(items=>{$('#hostMaterial').innerHTML='<option value="">选择人物图片或循环视频…</option>'+items.map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`).join('')}).catch(()=>{});
+api('/host-materials').then(items=>{$('#hostMaterial').innerHTML='<option value="">选择人物图片或循环视频…</option>'+items.map(x=>`<option value="${esc(x.name)}">${esc(x.label||x.name)}</option>`).join('')}).catch(()=>{});
 const drop=$('#audioDrop');drop.ondragover=e=>{e.preventDefault();drop.classList.add('dragover')};drop.ondragleave=()=>drop.classList.remove('dragover');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('dragover');if(!state.busy)uploadFile('audio',e.dataTransfer.files[0])};
 $('#ratio').oninput=e=>syncRatioUi(e.target.value);$('#ratio').onchange=e=>patchOptions({broll_ratio:Number(e.target.value)});
 $$('[data-ratio-preset]').forEach(button=>button.onclick=()=>patchOptions({broll_ratio:Number(button.dataset.ratioPreset)}));

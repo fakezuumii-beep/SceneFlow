@@ -1,18 +1,20 @@
-# SOLO 单人播客工作台
+# SceneFlow — AI Automatic Podcast Video Workbench
+
+SceneFlow turns scripts or audio into automatically edited videos through semantic shot planning, A-roll/B-roll selection, media retrieval, speech synthesis, lip-sync, and automated editing.
 
 > **把一段文案和一个人物形象，变成一支有口型、有画面、有字幕的单人播客视频。**
 
-SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下想说的话，选择主持人的图片或循环视频，点击一次「一键生成播客」；它会完成配音、时间对齐、分镜、素材匹配、人物口型、字幕与 MP4 导出。
+SceneFlow 是一个运行在本机浏览器中的单人播客制作工作台。写下想说的话，选择主持人的图片或循环视频，点击一次「一键生成播客」；它会完成配音、时间对齐、分镜、素材匹配、人物口型、字幕与 MP4 导出。
 
-![SOLO 工作台：输入文稿、选择人物形象，然后一键生成播客](docs/screenshots/workspace-start.png)
+![SceneFlow 工作台：输入文稿、选择人物形象，然后一键生成播客](docs/screenshots/workspace-start.png)
 
 *上图为本仓库正在运行的本地工作台截图。创作入口始终放在同一屏：左侧输入文案，中间选择人物形象，右侧即可启动生成。*
 
 ## 只需三步
 
 1. **输入文案**：直接粘贴中文稿，选择声音和语速；也可以导入现成音频或 SRT。
-2. **选择人物形象**：上传清晰的单人正脸图，或选择一段循环视频作为主持人。
-3. **点击生成**：SOLO 从真实音频开始完成整条制作链，你可以随时在时间线上查看、替换和微调每一镜。
+2. **选择人物形象**：直接使用内置女主持或男主持循环视频，也可以上传清晰的单人正脸图，或从「我的素材」选择自己的素材。
+3. **点击生成**：SceneFlow 从真实音频开始完成整条制作链，你可以随时在时间线上查看、替换和微调每一镜。
 
 ```text
 文案 / 音频
@@ -28,7 +30,7 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
 
 ## 成片里有什么
 
-| 模块 | SOLO 会做什么 |
+| 模块 | SceneFlow 会做什么 |
 | --- | --- |
 | 连续配音 | Azure TTS V1 生成完整音轨；失败重试会复用已完成片段。 |
 | 真实时间轴 | faster-whisper 为文稿/音频生成词级时间，镜头边界跟随真实停顿与语义节点。 |
@@ -82,14 +84,14 @@ SOLO 是一个运行在本机浏览器中的单人播客制作工作台。写下
 
 普通用户请从 GitHub Release 下载：
 
-`SOLO-Portable-v0.1.0-beta.1-Windows-x64.zip`
+`SceneFlow-Portable-v0.1.0-beta.1-Windows-x64.zip`
 
 1. 解压到普通文件夹。
-2. 双击 `SOLO.exe`。
-3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SOLO。
+2. 双击 `SceneFlow.exe`。
+3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SceneFlow。
 4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key。
 
-不需要安装 Python、FFmpeg 或 uv，也不需要配置 PATH、pip 或 PowerShell。便携版内置 Python 3.12.10、FFmpeg/ffprobe、SOLO 基础依赖和 faster-whisper Base。MuseTalk 与 Wav2Lip 都按需安装到各自的独立环境；Wav2Lip 安装前必须阅读并确认第三方非商业使用限制。A-roll 未安装不会阻止核心工作台启动。
+不需要安装 Python、FFmpeg 或 uv，也不需要配置 PATH、pip 或 PowerShell。便携版内置 Python 3.12.10、FFmpeg/ffprobe、SceneFlow 基础依赖和 faster-whisper Base。MuseTalk 与 Wav2Lip 都按需安装到各自的独立环境；Wav2Lip 安装前必须阅读并确认第三方非商业使用限制。A-roll 未安装不会阻止核心工作台启动。
 
 用户项目、设置和缓存保存在便携版文件夹的 `data/` 中。更新应用代码时不会删除 `data/`。
 
@@ -134,7 +136,7 @@ A-roll 三档为：
 
 - 轻量本地 · Wav2Lip：确认第三方限制后按需下载固定源码、官方 TorchScript checkpoint 与独立 Python 3.10 环境；支持图片、正向循环视频、连续 A-roll run 和断点续传。仅建议个人、研究和非商业用途。
 - 高质量本地 · MuseTalk 1.5：复用现有独立引擎、断点续传安装器和缓存。
-- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SOLO External A-roll API 配置。当前版本尚未开放这两类自定义适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
+- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SceneFlow External A-roll API 配置。当前版本尚未开放这两类自定义适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
 
 ## 文字配音
 

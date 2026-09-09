@@ -1,6 +1,6 @@
-"""On-demand, resumable installer for SOLO's isolated Wav2Lip runtime.
+"""On-demand, resumable installer for SceneFlow's isolated Wav2Lip runtime.
 
-The optional upstream component is intentionally not bundled with SOLO.  This
+The optional upstream component is intentionally not bundled with SceneFlow.  This
 installer only runs after the user acknowledges the upstream non-commercial
 terms in the UI (or explicitly passes the CLI acknowledgement for development
 smoke tests).

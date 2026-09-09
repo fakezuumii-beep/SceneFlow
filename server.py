@@ -19,7 +19,7 @@ async def lifespan(app):
     c.recover_jobs()
     yield
 
-app=FastAPI(title='SOLO 单人播客工作台',docs_url='/api/docs',lifespan=lifespan)
+app=FastAPI(title='SceneFlow — AI Automatic Podcast Video Workbench',docs_url='/api/docs',lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=['127.0.0.1','localhost','testserver'])
 
 @app.middleware('http')
@@ -254,14 +254,27 @@ def upload(pid:str,kind:str=Form(...),file:UploadFile=File(...),shot_id:str=Form
 
 @app.get('/api/host-materials')
 def host_materials():
+    allowed=('.png','.jpg','.jpeg','.webp','.mp4','.mov','.mkv','.webm','.m4v')
+    builtin_folder=c.ROOT/'assets'/'hosts'
+    result=[{'name':'builtin:'+item['filename'],'label':item['label'],'source':'builtin'}
+            for item in c.BUILTIN_HOST_VIDEOS
+            if (builtin_folder/item['filename']).is_file()]
     folder=c.ROOT/'我的素材'
-    return [{'name':path.name} for path in sorted(folder.iterdir()) if path.is_file() and
-            path.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.mp4','.mov','.mkv','.webm','.m4v')] if folder.is_dir() else []
+    if folder.is_dir():
+        result.extend({'name':path.name,'label':path.name,'source':'library'}
+                      for path in sorted(folder.iterdir()) if path.is_file() and path.suffix.lower() in allowed)
+    return result
 
 @app.post('/api/projects/{pid}/host-material')
 def use_host_material(pid:str,body:dict):
     name=str(body.get('name',''))
-    folder=(c.ROOT/'我的素材').resolve();path=(folder/name).resolve()
+    if name.startswith('builtin:'):
+        filename=name.removeprefix('builtin:')
+        known={item['filename'] for item in c.BUILTIN_HOST_VIDEOS}
+        if filename not in known:raise ValueError('未找到所选人物素材')
+        folder=(c.ROOT/'assets'/'hosts').resolve();path=(folder/filename).resolve()
+    else:
+        folder=(c.ROOT/'我的素材').resolve();path=(folder/name).resolve()
     if not name or path.parent!=folder or not path.is_file():raise ValueError('未找到所选人物素材')
     with path.open('rb') as f:
         return upload(pid,kind='portrait',file=UploadFile(file=f,filename=path.name),shot_id='')
