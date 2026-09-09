@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -32,6 +33,14 @@ class _Response:
 
 
 class Wav2LipSetupTests(unittest.TestCase):
+    def test_progress_output_survives_a_non_utf8_console(self):
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding='ascii')
+        with patch.object(setup.sys, 'stdout', stream):
+            setup.emit(42, '校验模型')
+            stream.flush()
+        self.assertIn(b'\\u6821\\u9a8c\\u6a21\\u578b', raw.getvalue())
+
     def test_app_code_without_runtime_is_not_an_installed_engine(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(setup, 'ENGINES', Path(folder)):
             status = setup.installation_status()

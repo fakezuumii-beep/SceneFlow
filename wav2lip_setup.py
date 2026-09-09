@@ -50,7 +50,10 @@ S3FD_URL = 'https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth
 
 
 def emit(percent: int, message: str):
-    print(f'[{max(0, min(100, int(percent))):03d}] {message}', flush=True)
+    line = f'[{max(0, min(100, int(percent))):03d}] {message}'
+    encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+    safe_line = line.encode(encoding, errors='backslashreplace').decode(encoding)
+    print(safe_line, flush=True)
 
 
 def digest(path: Path) -> str:
