@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Version = 'v0.1.0-beta.1',
     [switch]$SkipSmokeTest
 )

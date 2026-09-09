@@ -1,4 +1,4 @@
-param([switch]$CpuOnly, [switch]$SkipModels, [switch]$Portable)
+﻿param([switch]$CpuOnly, [switch]$SkipModels, [switch]$Portable)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
