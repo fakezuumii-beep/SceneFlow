@@ -1,191 +1,141 @@
-# SceneFlow — AI Automatic Podcast Video Workbench
+<div align="center">
 
-SceneFlow turns scripts or audio into automatically edited videos through semantic shot planning, A-roll/B-roll selection, media retrieval, speech synthesis, lip-sync, and automated editing.
+# 🎬 SceneFlow
 
-> **把一段文案和一个人物形象，变成一支有口型、有画面、有字幕的单人播客视频。**
+### 一段文案，一段音频，就是你下一期视频播客。
 
-SceneFlow 是一个运行在本机浏览器中的单人播客制作工作台。写下想说的话，选择主持人的图片或循环视频，点击一次「一键生成播客」；它会完成配音、时间对齐、分镜、素材匹配、人物口型、字幕与 MP4 导出。
+**免费开源 · 支持本地运行 · 一键生成单人播客视频**
 
-![SceneFlow 工作台：输入文稿、选择人物形象，然后一键生成播客](docs/screenshots/workspace-start.png)
+让人物开口说话，自动配画面、加字幕、剪成片。  
+你负责想说什么，SceneFlow 负责把它变成视频。
 
-*上图为本仓库正在运行的本地工作台截图。创作入口始终放在同一屏：左侧输入文案，中间选择人物形象，右侧即可启动生成。*
+[![License: MIT](https://img.shields.io/badge/License-MIT-4b7045.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-3578b8.svg)](#-下载与启动)
+[![Status: Beta](https://img.shields.io/badge/Status-Beta-e4ac45.svg)](https://github.com/fakezuumii-beep/SceneFlow/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/fakezuumii-beep/SceneFlow?style=social)](https://github.com/fakezuumii-beep/SceneFlow)
 
-## 只需三步
+[▶ 看生成案例](#-先看成片) · [📦 下载体验](https://github.com/fakezuumii-beep/SceneFlow/releases) · [📖 使用文档](docs/USAGE.md) · [💬 反馈与建议](https://github.com/fakezuumii-beep/SceneFlow/issues)
 
-1. **输入文案**：直接粘贴中文稿，选择声音和语速；也可以导入现成音频或 SRT。
-2. **选择人物形象**：直接使用内置女主持或男主持循环视频，也可以上传清晰的单人正脸图，或从「我的素材」选择自己的素材。
-3. **点击生成**：SceneFlow 从真实音频开始完成整条制作链，你可以随时在时间线上查看、替换和微调每一镜。
+</div>
 
-```text
-文案 / 音频
-    ↓
-配音或转录，并与真实音频时间对齐
-    ↓
-按语义生成镜头时间线，匹配人物与 B-roll
-    ↓
-所选 A-roll Provider 生成人物口型 + 字幕
-    ↓
-16:9 MP4、SRT 与镜头来源清单
-```
+![SceneFlow 一键播客生成：输入文案或音频，选择人物，点击生成](docs/showcase/01-create.png)
 
-## 成片里有什么
+## ✨ 把“我有个想法”，变成“我做了一期节目”
 
-| 模块 | SceneFlow 会做什么 |
+想做知识分享、读书解说、观点表达，或者把已有的音频变成有人物、有配图的视频？
+
+**输入文案或导入音频，选一个人物形象，点击「一键生成播客」。** 首次配置好所需服务后，SceneFlow 会自动完成配音或转录、分镜、人物口型、画面匹配、字幕和 MP4 导出。可以直接用内置主持人，也可以换成自己的图片或循环视频。
+
+| 你给它 | 它帮你完成 |
 | --- | --- |
-| 连续配音 | Azure TTS V1 生成完整音轨；失败重试会复用已完成片段。 |
-| 真实时间轴 | faster-whisper 为文稿/音频生成词级时间，镜头边界跟随真实停顿与语义节点。 |
-| 智能分镜 | 默认由 DeepSeek 判断语义与可视化对象，也可连接自定义 OpenAI 兼容服务；程序统一决定人物出镜、B-roll 占比和镜头节奏。 |
-| 画面素材 | 根据具体可视化对象检索 Pexels 或 Pixabay，也能逐镜换片或导入本地图片/视频。 |
-| 人物口型 | 可选择轻量本地 Wav2Lip、高质量本地 MuseTalk 1.5，或配置 ComfyUI / 在线 API 自定义工作流。Wav2Lip 与 MuseTalk 均可接入一键生成。 |
-| 最终交付 | 导出 16:9 MP4、字幕 SRT，以及可追溯的镜头和素材来源清单。 |
+| 📝 一段文案 | 生成配音，按真实语音时间安排镜头 |
+| 🎙️ 一段音频 | 转录内容，继续完成分镜与视频制作 |
+| 🧑 一个主持人形象 | 让人物跟着声音开口说话 |
+| 🌿 想讲的内容 | 自动搜索匹配的素材，与人物镜头交替呈现 |
+| 🎬 一次点击 | 合成人物、画面、声音与字幕，导出 16:9 MP4 |
 
-## 技术范围
+生成之后也能继续改：换配图、重新生成人物镜头、调整镜头边界，再导出你满意的版本。任务中断后，可以继续补齐未完成的步骤。
 
-一个面向普通创作者的本地音频转视频应用。输入中文原稿或导入音频，工作台会完成配音/转录、语义分镜、B-roll 搜索、人物口型、字幕与 MP4 导出。
+> **免费与本地运行说明：** SceneFlow 自有代码免费开源，默认提供 MuseTalk 本地口型方案，转录、口型推理与视频合成可在本机完成。默认文字配音需要联网，分镜 AI 和素材检索也取决于所选服务；第三方 API 可能收费。“支持本地运行”不代表默认配置完全离线，也不代表所有外接服务免费。
 
-在「连接与设置」中选择所需服务：
+## ▶ 先看成片
 
-- 分镜 AI：默认支持 DeepSeek，只填写 API Key；高级用户也可以配置 OpenAI 兼容服务。
-- B-roll：支持 Pexels / Pixabay，选择素材源后只填写对应 API Key。
-- A-roll：支持轻量本地、高质量本地和自定义工作流三档。Wav2Lip 需先确认第三方非商业使用限制，再按需安装独立环境；其模型和代码不随主 Portable 打包。
+**下面两段都是作者用 SceneFlow 在本地运行生成的案例，人物口型使用 MuseTalk。** 没有用付费云端视频模型替代演示中的人物生成；部分联网服务的使用范围见上方说明。
 
-文字配音使用 Azure TTS V1（`edge-tts`），无需 Azure Key，但需要联网并会把配音原稿发送到微软语音服务。faster-whisper、MuseTalk 1.5 和 FFmpeg 都在本机工作。只有用户主动选择并配置自定义 A-roll 时，工作台才会测试对应的 ComfyUI 或在线服务。
+点击封面或“观看示例”打开视频文件页；如果浏览器未显示播放器，可选择下载原片观看。
 
-## 能做什么
+| 示例 1 · 约 36 秒 | 示例 2 · 约 45 秒 |
+| :---: | :---: |
+| [![播放示例 1：SceneFlow 本地生成案例](docs/showcase/demo-1-cover.jpg)](docs/showcase/demo-1.mp4) | [![播放示例 2：SceneFlow 本地生成案例](docs/showcase/demo-2-cover.jpg)](docs/showcase/demo-2.mp4) |
+| **[▶ 观看示例 1](docs/showcase/demo-1.mp4)** · [下载原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-1.mp4) | **[▶ 观看示例 2](docs/showcase/demo-2.mp4)** · [下载原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-2.mp4) |
+| 1920 × 1080 · MP4 · MuseTalk 本地口型 | 1920 × 1080 · MP4 · MuseTalk 本地口型 |
 
-**文字一键成片**
+## 🖼️ 从输入到成片，四张图就看懂
 
-1. 粘贴原稿，选择 Azure TTS V1 的中文音色与语速。
-2. 生成连续配音，再用 faster-whisper 将原稿标点对齐到真实词时间；Azure 失败后重试时会复用已完成段落。
-3. DeepSeek 只做候选段语义分类，程序按配置计算视觉/人物双价值，并结合全片比例决定 A/B、叙事段合并和视觉镜头数量。
-4. 程序按真实时间优先在标点/词边界切镜头，Pexels 自动匹配 B-roll。
-5. 独立 MuseTalk 为 A-roll 生成人物口型。
-6. FFmpeg 合成 16:9 MP4、字幕和导出清单。
+**① 输入内容，选好人物，一键开工**
 
-**音频一键成片**
+首页大图就是创作入口：粘贴文案或导入音频，选择内置人物或自己的形象，再点击生成。准备好内容后，就不用挨个工具来回搬素材了。
 
-导入 MP3/WAV/M4A 后，本地 faster-whisper 先生成带真实词时间的标点候选段，再执行同一套规则分镜、素材、口型和导出流程。也可以直接导入 SRT。
+**② 配好连接，让分镜、素材和人物一起工作**
 
-## 自动分镜边界
+分镜 AI、素材源、人物口型集中设置。默认提供 MuseTalk 本地方案，也保留其他引擎与自定义工作流的配置入口。
 
-分镜分为两层：`narrative_segments` 保存完整叙事/语义段，`shots` 保存真正出现在时间轴上的 Visual Shot。一个叙事段可以对应一个或多个视觉镜头。
+![连接与设置：分镜模型、素材搜索 API、MuseTalk 本地人物口型](docs/showcase/02-settings.png)
 
-- LLM 输入只有候选段 `id/text` 与少量前后文；输出严格限于 `semantic_type`、`visual_subject`、`importance`、`emotion` 和原样 `id/text`。
-- LLM 输出包含时间、A/B、镜头数量或镜头切点会被程序拒绝并重试。
-- 程序分别计算 `visual_value`（适合素材展示）与 `host_value`（值得主持人露脸）；`importance`、`emotion` 会直接增加人物价值。明确倾向先锁定，其余候选在全片统一选择，兼顾双价值并尽量贴近项目里的 B-roll 比例目标。
-- 2 秒短段合并会分别按真实时长加权双价值，并保留 children 子语义；如果合并结果是 B-roll，素材词从最适合画面检索的 child 产生，不再只跟随最长段。
-- A-roll 按时长分层：≤8 秒默认保持，8–12 秒允许 0–1 次变化，12–18 秒通常 1–2 次，超过 18 秒会标记过长语义段供复查。程序优先在停顿、句末、转折、新观点和主语变化处找切点，不用数学均分硬切。
-- A-roll 变化会在保持长镜头、切近/切远和轻微推近/拉远中确定性选择，不会绕过全片分配临时改成 B-roll；无合适语义节点时允许保持单镜。连续 B-roll 只在人物价值足够高的自然语义节点回到主持人，没有合适节点时允许继续素材画面。
-- 比例是软目标，语义与真实音频时间优先。人工修改镜头类型或边界仍是最终编辑决定。
+**③ 先看整体，再看节奏**
 
-已选素材、人工调整的镜头边界和已经完成的口型缓存会保留。失败后点击继续只补未完成阶段，不会默默改写时间线。
+生成后直接预览。人物镜头和素材镜头按时间排列，哪里该让主持人出镜、哪里该给观众看画面，一眼就能检查。
 
-## Windows 用户推荐
+![成片预览、字幕与人物和素材镜头时间线](docs/showcase/03-preview.png)
 
-普通用户请从 GitHub Release 下载：
+**④ 自动生成之后，每一镜仍然由你决定**
 
-`SceneFlow-Portable-v0.1.0-beta.1-Windows-x64.zip`
+配图不合适就替换，人物镜头不满意就重新生成，还能导入本地图片和视频。自动化帮你完成初稿，编辑界面帮你把作品打磨到满意。
 
-1. 解压到普通文件夹。
-2. 双击 `SceneFlow.exe`。
-3. 首次启动会自动检查并准备核心环境，然后打开默认浏览器进入 SceneFlow。
-4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key。
+![逐镜编辑：替换配图、导入本地素材、重新生成人物口型](docs/showcase/04-edit.png)
 
-不需要安装 Python、FFmpeg 或 uv，也不需要配置 PATH、pip 或 PowerShell。便携版内置 Python 3.12.10、FFmpeg/ffprobe、SceneFlow 基础依赖和 faster-whisper Base。MuseTalk 与 Wav2Lip 都按需安装到各自的独立环境；Wav2Lip 安装前必须阅读并确认第三方非商业使用限制。A-roll 未安装不会阻止核心工作台启动。
+*图解中的个别界面来自早期 SOLO 命名版本，项目现名为 SceneFlow。图中第三方模型、商用和外接能力的简述，请结合下方版本说明与许可证文档阅读。*
 
-用户项目、设置和缓存保存在便携版文件夹的 `data/` 中。更新应用代码时不会删除 `data/`。
+## 📦 下载与启动
 
-## Windows 源码安装（开发者）
+### Windows 便携版：推荐第一次体验的朋友使用
 
-推荐 NVIDIA 显卡，显存 8 GB 以上；MuseTalk 在 CPU 上可以启动，但不适合实际成片。Azure TTS V1 不占用显卡。当前自动安装器面向 Windows 10/11 x64。
+**[前往 Releases 下载 Windows 便携版 →](https://github.com/fakezuumii-beep/SceneFlow/releases)**
 
-1. 下载或克隆本仓库并解压到普通文件夹。
-2. 双击 `安装工作台.bat`。安装器会自动下载项目独立的 Python 3.12.10 和 FFmpeg，不需要管理员权限，也不会修改系统 Python；随后安装 Azure TTS V1 客户端、MuseTalk、VAE、Whisper 和人脸检测模型。中断后可再次运行续传。
-3. 双击 `启动工作台.bat`，浏览器打开 `http://127.0.0.1:8766`。
-4. 在「连接与设置」填写 DeepSeek API Key 和 Pexels API Key，然后安装/校验 MuseTalk。
+1. 下载发布页中的 Windows x64 便携 ZIP，解压到普通文件夹。
+2. 双击 `SceneFlow.exe`，按启动提示完成环境检查，浏览器会打开工作台。
+3. 在「连接与设置」配置分镜 AI 和素材源，并安装 / 校验 MuseTalk。
+4. 回到首页，输入文案或导入音频，选好人物，点击「一键生成播客」。
 
-首次转录所选 faster-whisper 模型时会自动下载模型。默认使用轻量的 `base`；`small` 更快且更均衡，`large-v3` 更准确。
+便携版包含基础 Python、FFmpeg 与 Whisper Base；人物口型引擎和相关模型按需安装，首次准备需要下载。推荐使用 NVIDIA 显卡；具体安装、显存与配置说明请看 [完整使用文档](docs/USAGE.md)。
 
-PowerShell 也可以直接运行源码安装脚本：
+### 源码运行
 
-```powershell
-.\安装工作台.ps1
-.\启动工作台.ps1
-```
-
-只安装独立 Python、FFmpeg 和 Web 服务依赖，不下载口型模型：
-
-```powershell
-.\安装工作台.ps1 -SkipModels
-```
-
-## 连接与设置
-
-普通用户只需理解三个选择：DeepSeek 填 Key、Pexels 填 Key、A-roll 选择一种。DeepSeek 官方地址和项目已验证模型由程序内置，不在默认设置页暴露：
+克隆或下载仓库后，在 Windows 下依次双击：
 
 ```text
-API 地址：https://api.deepseek.com
-模型：deepseek-v4-flash
+安装工作台.bat
+启动工作台.bat
 ```
 
-密钥写入 `data/private/settings.json`。`data/` 已在 `.gitignore` 中，项目 JSON、日志、错误信息和导出清单也不会写入或回显密钥。
+启动后访问 `http://127.0.0.1:8766`，按同样步骤配置服务。详细参数、目录结构和排错入口见 [使用与技术说明](docs/USAGE.md)。
 
-Pexels 是默认素材源，Pixabay 是可选替代源。Whisper 模型、运行设备和 MuseTalk 显存档位收在折叠的「高级设置」内。所有密钥输入在重新打开时只显示遮罩；留空保存会保留原密钥。
+## 👄 关于口型效果，说点实在的
 
-A-roll 三档为：
+做这个项目，是想让更多人能用上自动播客制作。所以这一版先把 **MuseTalk 作为默认的本地口型方案**：不用为了生成人物说话就先购买云端视频服务。
 
-- 轻量本地 · Wav2Lip：确认第三方限制后按需下载固定源码、官方 TorchScript checkpoint 与独立 Python 3.10 环境；支持图片、正向循环视频、连续 A-roll run 和断点续传。仅建议个人、研究和非商业用途。
-- 高质量本地 · MuseTalk 1.5：复用现有独立引擎、断点续传安装器和缓存。
-- 自定义工作流：可保存并测试 ComfyUI workflow_api.json / 节点配置，或 SceneFlow External A-roll API 配置。当前版本尚未开放这两类自定义适配器的自动生成协议，未就绪时 preflight 会在任务开始前引导回设置。
+代价也很直接：有些镜头看起来难免有一点“假”，嘴部融合、表情和动作自然度还有提升空间。上面的案例就是当前本地方案的实际效果，大家可以先看，再决定是否适合自己的内容。
 
-## 文字配音
+如果追求更好的画面，后续会继续完善外接工作流。**下面是作者在自己的素材与工作流中的主观实测体验，不是统一条件下的模型排名，也不代表当前版本都已接通：**
 
-Azure TTS V1 是新项目默认引擎，默认中文音色为 `zh-CN-XiaoxiaoNeural`。界面支持中文/英文音色与 0.85×–1.2× 常用语速。它按自然句子或较长文本连续请求，不会为了逗号分镜逐小句合成；每段最多重试三次，并只在音频可解码后写入缓存。完整音轨生成后才进行原稿/语音对齐和分镜。
+- **ComfyUI + InfiniteTalk：** 在作者目前测试的几种方案里，人物说话的整体效果最好，可作为更高质量本地工作流的探索方向；本地推理无需按次支付云端视频生成费。
+- **LTX / MiniMax：** 作者测试中出现过一些人物偏移，仍需根据素材和工作流继续调试。
+- **Seedance 等在线模型：** 预算充足的朋友也可以探索，成片质感有机会再上一个档次；实际效果、费用和可用能力取决于服务与接入方式。
 
-文字配音只提供 Azure TTS V1。修改原稿、音色、语言或语速后，工作台会将配音标为需要重做。
+**当前版本状态：** MuseTalk 与 Wav2Lip 已接入一键生成；ComfyUI / 在线 API 目前支持保存配置与测试连接，自动提交生成、注入素材和取回视频尚待开放。Wav2Lip 有第三方非商业使用限制，模型与素材的使用范围请查阅 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
-## 独立 MuseTalk 口型
+## 🚧 先把一个人的节目做好，再让更多角色登场
 
-工作台直接调用固定版本的 MuseTalk 源码与官方 1.5 权重。一次任务会先加载模型，再连续处理所有待生成 A-roll，避免每个短镜头重新载入模型。静态人物图会保持单机位；人物循环视频按播客绝对时间连续向前取帧，保留原有眨眼和身体动作。
+这个项目最初想做的是**双人播客**。实际做起来，发现双人对话、人物一致性和镜头调度比想象中更麻烦，所以先做一个单人版本试试水，把从内容到成片的流程跑顺，也让大家先用起来。
 
-Wav2Lip 使用单独的 `engines/wav2lip-env`，不会升级或降级 MuseTalk 的 `media-env`。安装器固定源码 revision 和依赖版本，模型下载写入 `.part` 并支持 Range 续传，校验大小与 SHA256 后才替换正式文件。自动获取官方模型失败时，可在「连接与设置」选择从官方说明页下载的本地模型文件。
+接下来想继续做的方向：
 
-推理运行在独立 Python 进程中：
+- [x] 单人播客：文案 / 音频 → 人物口型 + 配图 + 字幕 + 成片
+- [x] 成片预览、逐镜换素材、人物镜头重生成
+- [ ] 完善 ComfyUI 与在线视频模型的自动生成接入
+- [ ] 双人播客：对话、角色切换与镜头配合
+- [ ] 多角色内容与短剧等更丰富的创作形式
 
-- 正常完成、取消或报错后，进程退出并释放显存。
-- 每个镜头用人物文件、音频、起止时间和适配器版本生成缓存签名。
-- 修改人物、音频或镜头边界只会让相关 A-roll 失效。
-- 历史成片和历史口型文件保留，新结果通过时长与帧数校验后才替换当前引用。
+这些是后续方向，还没有承诺发布时间。欢迎在 [Issues](https://github.com/fakezuumii-beep/SceneFlow/issues) 告诉我：你最想先用哪一个？也欢迎带上遇到的问题和你的生成案例。
 
-为了降低 Windows 安装复杂度，工作台使用 OpenCV YuNet 检测正脸，并采用柔边椭圆将生成区域贴回原帧。人物素材应为清晰、无遮挡、单人正脸；多人、侧脸或遮挡严重的视频会明确报错。
+## ⭐ 如果你也想让创作少一点折腾
 
-## 目录与发布
+**给 SceneFlow 点一个 Star，陪它从单人播客长成双人对话，再走向短剧。**
 
-```text
-server.py / core.py       Web API 与整条任务链
-storyboard.py             确定性的双价值、全片 A/B 分配、时长和视觉镜头规则
-storyboard_rules.json     主链路实际读取的双价值、选择、时长与自然回场配置
-speech_units.py           标点候选切分与原稿/Whisper 词时间对齐
-static/                   本地 Web 界面
-local_engines.py          Azure 配音与媒体引擎生命周期
-azure_tts_worker.py       Azure TTS V1 分段请求、重试、缓存与 WAV 合并
-aroll.py                  独立 MuseTalk 调度、缓存与校验
-musetalk_worker.py        无 ComfyUI 的 MuseTalk 推理进程
-engine_setup.py           可续传的源码、运行时与权重安装器
-providers/                LLM、B-roll 与 A-roll Provider 注册、解析、状态和缓存身份
-data/                     私有设置、项目、缓存、日志（不提交）
-engines/                  下载的 MuseTalk 环境、源码与权重（不提交）
-.runtime/                 自动安装的 Python/FFmpeg 引导工具与 FFmpeg（不提交）
-```
+Star 能让更多人发现它，也让我知道这个方向值得继续做。欢迎提交 Issue、贡献代码，或把你用它做的节目分享出来。
 
-提交公开仓库前运行：
+## 致谢与许可
 
-```powershell
-.\发布检查.ps1
-```
+感谢 MuseTalk、Wav2Lip、faster-whisper、FFmpeg、edge-tts 等项目，以及提供素材服务的平台。SceneFlow 把这些能力串成一条面向创作者的制作流程。
 
-它会拒绝常见密钥格式、机器专用绝对路径、4B/llama.cpp 残留和被误纳入 Git 的项目数据或模型文件。
-
-## 许可
-
-本仓库自有代码采用 MIT License。模型、FFmpeg、PyTorch 与下载的第三方源码仍受各自许可证和模型卡约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。发布源码不等于获得 Pexels 素材的再分发权；导出作品中的素材使用需遵守素材平台条款。
+本仓库自有代码使用 [MIT License](LICENSE)。第三方代码、模型及素材仍遵循各自许可证与平台条款，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
