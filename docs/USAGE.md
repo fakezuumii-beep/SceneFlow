@@ -189,4 +189,3 @@ engines/                  下载的 MuseTalk 环境、源码与权重（不提�
 ## 许可
 
 本仓库自有代码采用 MIT License。模型、FFmpeg、PyTorch 与下载的第三方源码仍受各自许可证和模型卡约束，详见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。发布源码不等于获得 Pexels 素材的再分发权；导出作品中的素材使用需遵守素材平台条款。
-

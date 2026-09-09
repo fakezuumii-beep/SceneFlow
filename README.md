@@ -6,7 +6,7 @@
 
 **免费开源 · 支持本地运行 · 一键生成单人播客视频**
 
-让人物开口说话，自动配画面、加字幕、剪成片。  
+让人物开口说话，自动配画面、加字幕、剪成片。<br>
 你负责想说什么，SceneFlow 负责把它变成视频。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4b7045.svg)](LICENSE)
