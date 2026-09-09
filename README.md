@@ -20,6 +20,14 @@
 
 ![SceneFlow 一键播客生成：输入文案或音频，选择人物，点击生成](docs/showcase/01-create.png)
 
+## 🚀 只需三步，一键生成视频
+
+| ① 输入文案或音频 | ② 选择人物形象 | ③ 点击一键生成 |
+| :---: | :---: | :---: |
+| 粘贴想说的内容，或导入已有音频 | 使用内置主持人，或上传自己的图片 / 循环视频 | 自动完成人物口型、配图、字幕与 MP4 导出 |
+
+**不用在多个工具之间来回折腾。准备好内容和人物，剩下的交给 SceneFlow。**
+
 ## ✨ 把“我有个想法”，变成“我做了一期节目”
 
 想做知识分享、读书解说、观点表达，或者把已有的音频变成有人物、有配图的视频？
@@ -42,33 +50,46 @@
 
 **下面两段都是作者用 SceneFlow 在本地运行生成的案例，人物口型使用 MuseTalk。** 没有用付费云端视频模型替代演示中的人物生成；部分联网服务的使用范围见上方说明。
 
-点击下方播放器的 **▶**，即可在本页直接观看，支持声音、进度拖动和全屏播放。
+点击播放器的 **▶** 即可直接观看；两个案例并排展示，也支持声音、进度拖动和全屏播放。
 
-### 示例 1 · 约 36 秒
+<table>
+<tr>
+<th width="50%">示例 1 · 约 36 秒</th>
+<th width="50%">示例 2 · 约 37 秒</th>
+</tr>
+<tr>
+<td>
 
 https://github.com/user-attachments/assets/c6d29653-15c4-4c25-b912-faec5f52b84f
 
-1920 × 1080 · MuseTalk 本地口型 · [下载高清原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-1.mp4)
+</td>
+<td>
 
-### 示例 2 · 约 45 秒
+https://github.com/user-attachments/assets/55a74a21-31e8-45e3-9542-f78d23a54b78
 
-https://github.com/user-attachments/assets/b1a256f4-0b80-4236-ae8f-8897c723cffd
-
-1920 × 1080 · MuseTalk 本地口型 · [下载高清原片](https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-2.mp4)
+</td>
+</tr>
+<tr>
+<td align="center">MuseTalk 本地口型 · <a href="https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-1.mp4">下载高清原片</a></td>
+<td align="center">MuseTalk 本地口型 · <a href="https://github.com/fakezuumii-beep/SceneFlow/raw/refs/heads/main/docs/showcase/demo-2.mp4">下载高清原片</a></td>
+</tr>
+</table>
 
 *在线播放版经过体积优化，保留完整内容与音频；上方下载链接提供原始导出文件。*
 
 ## 🖼️ 从输入到成片，四张图就看懂
 
-**① 输入内容，选好人物，一键开工**
-
-首页大图就是创作入口：粘贴文案或导入音频，选择内置人物或自己的形象，再点击生成。准备好内容后，就不用挨个工具来回搬素材了。
-
-**② 配好连接，让分镜、素材和人物一起工作**
+**① 配好连接，让分镜、素材和人物一起工作**
 
 分镜 AI、素材源、人物口型集中设置。默认提供 MuseTalk 本地方案，也保留其他引擎与自定义工作流的配置入口。
 
 ![连接与设置：分镜模型、素材搜索 API、MuseTalk 本地人物口型](docs/showcase/02-settings.png)
+
+**② 输入内容，选好人物，一键开工**
+
+粘贴文案或导入音频，选择内置人物或自己的形象，再点击生成。准备好内容后，就不用挨个工具来回搬素材了。
+
+![SceneFlow 创作入口：输入文案或音频、选择人物形象、一键生成视频](docs/showcase/01-create.png)
 
 **③ 先看整体，再看节奏**
 
