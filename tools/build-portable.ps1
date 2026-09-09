@@ -258,10 +258,12 @@ if (-not $SkipSmokeTest) {
     $env:HF_HUB_OFFLINE = '1'
     $env:TRANSFORMERS_OFFLINE = '1'
     $env:PATH = (Join-Path $smokeApp '.runtime\ffmpeg\bin') + [IO.Path]::PathSeparator + $env:PATH
-    & (Join-Path $smokeApp '.runtime\ffmpeg\bin\ffmpeg.exe') -version | Select-Object -First 1
+    $ffmpegVersion = & (Join-Path $smokeApp '.runtime\ffmpeg\bin\ffmpeg.exe') -version
     if ($LASTEXITCODE -ne 0) { throw 'Portable ffmpeg smoke test 失败。' }
-    & (Join-Path $smokeApp '.runtime\ffmpeg\bin\ffprobe.exe') -version | Select-Object -First 1
+    $ffmpegVersion | Select-Object -First 1
+    $ffprobeVersion = & (Join-Path $smokeApp '.runtime\ffmpeg\bin\ffprobe.exe') -version
     if ($LASTEXITCODE -ne 0) { throw 'Portable ffprobe smoke test 失败。' }
+    $ffprobeVersion | Select-Object -First 1
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $smokeApp 'install-portable.ps1') -Portable -SkipModels
     if ($LASTEXITCODE -ne 0) { throw 'Portable 离线核心安装 smoke test 失败。' }
     $wav = Join-Path $smokeData 'smoke.wav'
