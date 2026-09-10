@@ -11,10 +11,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-4b7045.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-3578b8.svg)](#-下载与启动)
-[![Status: Beta](https://img.shields.io/badge/Status-Beta-e4ac45.svg)](https://github.com/fakezuumii-beep/SceneFlow/releases)
+[![Status: Beta](https://img.shields.io/badge/Status-Beta-e4ac45.svg)](https://github.com/fakezuumii-beep/SceneFlow/releases/tag/v0.1.0-beta.1)
 [![GitHub Stars](https://img.shields.io/github/stars/fakezuumii-beep/SceneFlow?style=social)](https://github.com/fakezuumii-beep/SceneFlow)
 
-[▶ 看生成案例](#-先看成片) · [📦 下载体验](https://github.com/fakezuumii-beep/SceneFlow/releases) · [📖 使用文档](docs/USAGE.md) · [💬 反馈与建议](https://github.com/fakezuumii-beep/SceneFlow/issues)
+[▶ 看生成案例](#-先看成片) · [📦 下载体验](https://github.com/fakezuumii-beep/SceneFlow/releases/tag/v0.1.0-beta.1) · [📖 使用文档](docs/USAGE.md) · [💬 反馈与建议](https://github.com/fakezuumii-beep/SceneFlow/issues)
 
 </div>
 
@@ -109,7 +109,7 @@ https://github.com/user-attachments/assets/55a74a21-31e8-45e3-9542-f78d23a54b78
 
 ### Windows 便携版：推荐第一次体验的朋友使用
 
-**[前往 Releases 下载 Windows 便携版 →](https://github.com/fakezuumii-beep/SceneFlow/releases)**
+**[前往 Releases 下载 Windows 便携版 →](https://github.com/fakezuumii-beep/SceneFlow/releases/tag/v0.1.0-beta.1)**
 
 1. 下载发布页中的 Windows x64 便携 ZIP，解压到普通文件夹。
 2. 双击 `SceneFlow.exe`，按启动提示完成环境检查，浏览器会打开工作台。
