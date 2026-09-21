@@ -24,7 +24,10 @@ class ArollProvider:
 
     def signature(self, project, shot):
         import aroll
-        return aroll.signature(project, shot, self.cache_identity())
+        identity = dict(self.cache_identity())
+        if shot.get('aroll_config'):
+            identity['shot_config'] = shot['aroll_config']
+        return aroll.signature(project, shot, identity)
 
     def is_ready(self, project, shot):
         import core

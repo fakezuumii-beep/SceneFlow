@@ -25,13 +25,26 @@ BROLL_PROVIDERS = {
 }
 
 AROLL_MODES = {
+    'latentsync': {
+        'id': 'latentsync', 'name': '高质量本地 · LatentSync 1.6',
+        'short_name': 'LatentSync 1.6 · 高质量',
+        'description': '本地高质量口型，适合 RTX 2080 Ti 22GB；速度较慢',
+    },
+    'autodl_h3': {
+        'id': 'autodl_h3', 'name': '云端高质量 · MiniMax H3 自动对口型', 'short_name': 'H3 · 云端口型',
+        'description': '上传人物图片和对应原音频到 AutoDL，生成带自然表情与动作的 A-roll',
+    },
+    'infinitetalk': {
+        'id': 'infinitetalk', 'name': '单人影片 · InfiniteTalk Q8', 'short_name': 'InfiniteTalk · 单人',
+        'description': '使用已有 ComfyUI，由人物图片和原音频生成口型、表情与细微动作',
+    },
     'wav2lip': {
         'id': 'wav2lip', 'name': '轻量本地 · Wav2Lip', 'short_name': 'Wav2Lip · 轻量',
         'description': '速度快、安装体积较小，适合低配置设备', 'license': '仅限个人 / 研究 / 非商业用途',
     },
     'musetalk': {
-        'id': 'musetalk', 'name': '高质量本地 · MuseTalk 1.5', 'short_name': 'MuseTalk 1.5 · 本地',
-        'description': '本地 GPU、效果更好，首次安装体积较大',
+        'id': 'musetalk', 'name': '高质量快速本地 · MuseTalk 1.5', 'short_name': 'MuseTalk 1.5 · 高质量',
+        'description': '支持 FP32、官方下巴解析融合与低压缩中间文件',
     },
     'custom': {
         'id': 'custom', 'name': '自定义工作流', 'short_name': '自定义工作流',

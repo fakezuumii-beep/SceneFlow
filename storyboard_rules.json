@@ -1,5 +1,5 @@
 {
-  "version": "semantic-dual-value-v5-natural-return",
+  "version": "semantic-dual-value-v6-flow",
   "semantic_types": [
     "hook", "intro", "opinion", "emotion", "question", "transition",
     "summary", "person", "location", "object", "event", "action",
@@ -54,12 +54,7 @@
   },
   "selection": {
     "definite_b_advantage": 2,
-    "definite_a_advantage": -2,
-    "ratio_quantum_seconds": 0.1
-  },
-  "host_return": {
-    "minimum_broll_narratives": 3,
-    "minimum_host_value": 3
+    "definite_a_advantage": -2
   },
   "durations": {
     "min_shot": 2.0,
@@ -67,11 +62,14 @@
     "broll_single_max": 6.0,
     "broll_two_shot_max": 9.0,
     "broll_three_shot_max": 13.0,
-    "broll_target": 4.5
-  },
-  "anchors": {
-    "opening_aroll": true,
-    "closing_aroll": true
+    "broll_target": 4.5,
+    "visual_roles": {
+      "B": {"min": 2.0, "target": 4.0, "max": 5.0},
+      "E": {"min": 2.0, "target": 4.0, "max": 5.0},
+      "R": {"min": 5.0, "target": 12.0, "max": 20.0},
+      "M": {"min": 3.0, "target": 5.0, "max": 8.0},
+      "G": {"min": 2.0, "target": 4.0, "max": 8.0}
+    }
   },
   "directional_cuts": {
     "broll_to_aroll": {
@@ -82,35 +80,6 @@
       "search_after_seconds": 0.35,
       "release_guard_seconds": 0.067,
       "fallback_guard_seconds": 0.067
-    }
-  },
-  "camera_choices": ["medium", "medium", "medium_close"],
-  "aroll_variation": {
-    "tiers": [
-      {"max_seconds": 8.0, "min_changes": 0, "max_changes": 0},
-      {"max_seconds": 12.0, "min_changes": 0, "max_changes": 1},
-      {"max_seconds": 18.0, "min_changes": 1, "max_changes": 2},
-      {"max_seconds": null, "min_changes": 2, "max_changes": null}
-    ],
-    "minimum_change_gap": 3.0,
-    "long_change_target_seconds": 7.0,
-    "preferred_cut_score": 2.0,
-    "fallback_cut_score": 1.0,
-    "pause_seconds": 0.3,
-    "strong_pause_seconds": 0.55,
-    "motion_zoom": 0.08,
-    "transition_words": ["但是", "不过", "然而", "可是", "反过来", "与此同时", "另外", "所以", "因此", "因而", "结果", "那么"],
-    "viewpoint_words": ["我认为", "我的看法是", "真正的问题是", "关键在于", "更重要的是", "换句话说", "从另一个角度", "接下来", "首先", "其次", "最后"],
-    "cut_weights": {
-      "comma": 1.0,
-      "clause_end": 2.0,
-      "sentence_end": 4.0,
-      "pause": 2.0,
-      "strong_pause": 5.0,
-      "transition": 4.0,
-      "viewpoint": 4.0,
-      "semantic_change": 3.0,
-      "subject_change": 2.0
     }
   }
 }
