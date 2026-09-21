@@ -188,8 +188,11 @@ class ApiTests(TestCase):
         self.assertEqual(response.status_code,200,response.text)
         project=core.read_project(self.pid)
         self.assertEqual(project['script']['reference'],project['voice_reference'])
-        self.assertTrue(core.generation_preflight(project,'draft')['issues']==[] or
-                        all(issue['code']!='tts' for issue in core.generation_preflight(project,'draft')['issues']))
+        # The point is that the uploaded reference satisfies the index script.
+        # Whether a local engine is actually running is not part of this test.
+        with mock.patch('local_engines.provider_status',return_value={'ready':True}):
+            issues=core.generation_preflight(project,'draft')['issues']
+        self.assertTrue(all(issue['code']!='tts' for issue in issues),issues)
 
     def test_new_project_inherits_previous_project_settings_and_voice_assets(self):
         self.client.patch(f'/api/projects/{self.pid}',json={'options':{
