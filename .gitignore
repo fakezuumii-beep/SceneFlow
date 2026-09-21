@@ -29,3 +29,10 @@ assets/hosts/*.mp4
 !assets/hosts/sceneflow-host-female-loop-v1.mp4
 !assets/hosts/sceneflow-host-male-loop-v1.mp4
 *.part
+
+# 本地临时帧、导出影片与晨报运行期产物（不提交）
+_tmp_*/
+videos/
+weekly_recut_*/
+ai_morning_editor/history/
+ai_morning_editor/output/
