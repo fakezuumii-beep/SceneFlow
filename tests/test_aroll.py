@@ -85,6 +85,12 @@ class ArollTests(TestCase):
             self.assertEqual(aroll.batch_size(),8)
         self.assertIn(core._aroll_batch_size({}), (1,2,4,8,16))
 
+    def test_face_box_smoothing_removes_one_frame_detector_jump(self):
+        source=(Path(__file__).resolve().parents[1]/'musetalk_worker.py').read_text(encoding='utf-8')
+        self.assertIn('def smooth_boxes(boxes,radius=2):',source)
+        self.assertIn('np.median(window,axis=0)',source)
+        self.assertIn('return smooth_boxes(result)',source)
+
     def test_oom_halves_batch_before_retry(self):
         tasks=[{'batch_size':8}]
         calls=[]

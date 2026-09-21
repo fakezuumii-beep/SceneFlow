@@ -2,9 +2,127 @@ import copy, json, math, os, sys, tempfile, unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import core
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 class TimelineTests(unittest.TestCase):
+    def test_project_output_sizes_include_square_and_portrait(self):
+        self.assertEqual(core.output_size({'resolution':'1080p','aspect_ratio':'16:9'}),(1920,1080))
+        self.assertEqual(core.output_size({'resolution':'1080p','aspect_ratio':'1:1'}),(1080,1080))
+        self.assertEqual(core.output_size({'resolution':'720p','aspect_ratio':'1:1'}),(720,720))
+        self.assertEqual(core.output_size({'resolution':'1080p','aspect_ratio':'9:16'}),(1080,1920))
+        self.assertEqual(core.output_size({'resolution':'720p','aspect_ratio':'9:16'}),(720,1280))
+
+    def test_legacy_project_options_default_to_landscape(self):
+        project={'options':{'resolution':'720p'}}
+        self.assertTrue(core.normalize_project_options(project))
+        self.assertEqual(project['options']['aspect_ratio'],'16:9')
+        self.assertEqual(project['options']['workflow_mode'],'direct')
+        self.assertFalse(core.normalize_project_options(project))
+
+    def test_semantic_split_snaps_to_real_boundary_and_merge_restores_timeline(self):
+        project={'duration':6.0,
+                 'candidate_segments':[{'id':0,'start':0,'end':1.8,'text':'第一句。'},
+                                       {'id':1,'start':2,'end':3.8,'text':'第二句。'},
+                                       {'id':2,'start':4,'end':6,'text':'第三句。'}],
+                 'narrative_segments':[{'id':'n1','start':0,'end':2,'text':'第一句。','semantic_type':'opinion','visual_subject':'观点','visual_value':1,'host_value':4},
+                                       {'id':'n2','start':2,'end':4,'text':'第二句。','semantic_type':'process','visual_subject':'过程','visual_value':4,'host_value':2},
+                                       {'id':'n3','start':4,'end':6,'text':'第三句。','semantic_type':'data','visual_subject':'数据','visual_value':4,'host_value':3}],
+                 'segments':[],
+                 'shots':[{'id':'b1','kind':'B','start':0,'end':6,'title':'完整语义','text':'第一句。第二句。第三句。',
+                           'reason':'原始分镜','keywords':['完整语义'],'media_start':0,'asset':'assets/original.mp4','source':{'id':'source-1'},'candidates':[{'id':'source-1'}]}]}
+        result=core.split_shot_semantically(project,'b1',3.9)
+        self.assertEqual(result['split_time'],4.0)
+        self.assertEqual([(s['start'],s['end']) for s in project['shots']],[(0,4.0),(4.0,6)])
+        self.assertEqual(project['shots'][0]['text'],'第一句。第二句。')
+        self.assertEqual(project['shots'][1]['text'],'第三句。')
+        self.assertEqual(project['shots'][0]['asset'],'assets/original.mp4')
+        self.assertIsNone(project['shots'][1]['asset'])
+        core.merge_shots_semantically(project,result['selected_id'],'previous')
+        self.assertEqual(len(project['shots']),1)
+        self.assertEqual((project['shots'][0]['start'],project['shots'][0]['end']),(0,6.0))
+        self.assertEqual(project['shots'][0]['text'],'第一句。第二句。第三句。')
+
+    def test_semantic_merge_rejects_mixed_visual_kinds(self):
+        project={'duration':2,'candidate_segments':[],'narrative_segments':[],'segments':[],
+                 'shots':[{'id':'a','kind':'A','start':0,'end':1,'text':'A','title':'A','reason':'','keywords':[],'media_start':0},
+                          {'id':'b','kind':'B','start':1,'end':2,'text':'B','title':'B','reason':'','keywords':[],'media_start':0}]}
+        with self.assertRaisesRegex(ValueError,'类型不同'):
+            core.merge_shots_semantically(project,'a','next')
+
+    def test_semantic_aroll_merge_preserves_history_and_requires_matching_settings(self):
+        base={'duration':2,'candidate_segments':[],'narrative_segments':[],'segments':[],
+              'shots':[{'id':'a1','kind':'A','start':0,'end':1,'text':'前句','title':'前句','reason':'','keywords':[],'media_start':0,
+                        'aroll_config':{'provider':'autodl_h3'},'aroll_asset':'assets/a1.mp4','aroll_signature':'sig1'},
+                       {'id':'a2','kind':'A','start':1,'end':2,'text':'后句','title':'后句','reason':'','keywords':[],'media_start':0,
+                        'aroll_config':{'provider':'autodl_h3'},'aroll_asset':'assets/a2.mp4','aroll_signature':'sig2'}]}
+        project=copy.deepcopy(base);core.merge_shots_semantically(project,'a1','next')
+        self.assertNotIn('aroll_asset',project['shots'][0])
+        self.assertEqual({item['asset'] for item in project['shots'][0]['aroll_history']},{'assets/a1.mp4','assets/a2.mp4'})
+        project=copy.deepcopy(base);project['shots'][1]['aroll_config']={'provider':'infinitetalk'}
+        with self.assertRaisesRegex(ValueError,'生成设置不同'):
+            core.merge_shots_semantically(project,'a1','next')
+
+    def test_two_step_draft_renders_reference_image_without_aroll(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(core,'PROJECTS',Path(directory)):
+            project=core.create_project('two-step-draft');folder=core.project_dir(project['id'])
+            image=folder/'assets'/'host.jpg';core.Image.new('RGB',(96,54),'#315747').save(image)
+            aroll=folder/'assets'/'old-aroll.jpg';core.Image.new('RGB',(96,54),'#a34141').save(aroll)
+            audio=folder/'assets'/'audio.wav'
+            core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','sine=frequency=440:duration=0.4','-ar','16000','-ac','1',audio])
+            project.update(audio='assets/audio.wav',portrait='assets/host.jpg',portrait_kind='image',duration=.4,
+                           job={'status':'running','stage':'test','progress':0,'message':''},
+                           shots=[{'id':'a1','kind':'A','start':0,'end':.4,'title':'host','text':'test','camera':'medium',
+                                   'aroll_asset':'assets/old-aroll.jpg'}])
+            project['options'].update(workflow_mode='two_step',resolution='720p',subtitles=False)
+            provider=Mock();provider.is_ready.return_value=True
+            core.save_project(project)
+            with patch('providers.aroll.get_shot_aroll_provider',return_value=provider):
+                core.render(project['id'],allow_aroll_placeholder=True,export_kind='draft')
+            saved=core.read_project(project['id']);export=saved['exports'][-1]
+            self.assertEqual(export['kind'],'draft');self.assertEqual(export['aroll_placeholders'],1)
+            self.assertTrue(export['file'].endswith('/rough-cut.mp4'))
+            self.assertTrue((folder/export['file']).is_file())
+            manifest=json.loads((folder/Path(export['file']).parent/'manifest.json').read_text(encoding='utf-8'))
+            self.assertEqual(manifest['actual_visuals'][0]['visual'],'assets/host.jpg')
+
+    def test_square_project_renders_a_real_square_mp4(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(core,'PROJECTS',Path(directory)):
+            project=core.create_project('square-render');folder=core.project_dir(project['id'])
+            image=folder/'assets'/'visual.jpg';core.Image.new('RGB',(96,54),'#315747').save(image)
+            audio=folder/'assets'/'audio.wav'
+            core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','sine=frequency=440:duration=0.4',
+                      '-ar','16000','-ac','1',audio])
+            project.update(audio='assets/audio.wav',portrait='assets/visual.jpg',portrait_kind='image',duration=.4,
+                           job={'status':'running','stage':'test','progress':0,'message':''},
+                           shots=[{'id':'b1','kind':'B','start':0,'end':.4,'asset':'assets/visual.jpg','media_start':0,
+                                   'visual_change':'cut','source':{'provider':'test'}}])
+            project['options'].update(aspect_ratio='1:1',resolution='720p',subtitles=False)
+            core.save_project(project);core.render(project['id'])
+            result=core.read_project(project['id']);output=folder/result['exports'][-1]['file']
+            video=next(s for s in core.probe(output)['streams'] if s['codec_type']=='video')
+            self.assertEqual((video['width'],video['height']),(720,720))
+
+    def test_portrait_project_renders_a_real_vertical_mp4(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(core,'PROJECTS',Path(directory)):
+            project=core.create_project('portrait-render');folder=core.project_dir(project['id'])
+            image=folder/'assets'/'visual.jpg';core.Image.new('RGB',(54,96),'#315747').save(image)
+            audio=folder/'assets'/'audio.wav'
+            core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','sine=frequency=440:duration=0.4',
+                      '-ar','16000','-ac','1',audio])
+            project.update(audio='assets/audio.wav',portrait='assets/visual.jpg',portrait_kind='image',duration=.4,
+                           segments=[{'start':0,'end':.4,'text':'竖屏字幕'}],
+                           job={'status':'running','stage':'test','progress':0,'message':''},
+                           shots=[{'id':'b1','kind':'B','start':0,'end':.4,'asset':'assets/visual.jpg','media_start':0,
+                                   'visual_change':'cut','source':{'provider':'test'}}])
+            project['options'].update(aspect_ratio='9:16',resolution='720p',subtitles=True)
+            core.save_project(project);core.render(project['id'])
+            result=core.read_project(project['id']);output=folder/result['exports'][-1]['file']
+            video=next(s for s in core.probe(output)['streams'] if s['codec_type']=='video')
+            self.assertEqual((video['width'],video['height']),(720,1280))
+            ass=(output.parent/'subtitles.ass').read_text(encoding='utf-8')
+            self.assertIn('PlayResX: 1080',ass)
+            self.assertIn('PlayResY: 1920',ass)
+
     def test_default_asr_model_is_base(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(core,'PRIVATE',Path(folder)):
             self.assertEqual(core.settings(True)['asr_model'],'base')
@@ -12,7 +130,9 @@ class TimelineTests(unittest.TestCase):
     def test_packaged_asr_model_is_reported_without_user_cache(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as cache:
             root=Path(folder);model=root/'engines'/'faster-whisper'/'base'
-            model.mkdir(parents=True);(model/'model.bin').write_bytes(b'model')
+            model.mkdir(parents=True)
+            for name in ('model.bin','config.json','tokenizer.json','vocabulary.txt'):
+                (model/name).write_bytes(b'model')
             with patch.object(core,'ROOT',root), patch.dict('os.environ',{'HF_HUB_CACHE':cache}):
                 self.assertEqual(core.cached_models(),['base'])
 
@@ -26,6 +146,15 @@ class TimelineTests(unittest.TestCase):
             env = core.transcription_environment(True)
             self.assertEqual(env['HF_HUB_OFFLINE'], '1')
 
+    def test_transcription_environment_reuses_complete_local_cuda_runtime(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime=Path(folder)
+            (runtime/'cublas64_12.dll').write_bytes(b'dll')
+            (runtime/'cudnn_ops64_9.dll').write_bytes(b'dll')
+            with patch.dict(os.environ,{'SCENEFLOW_CUDA_DLL_DIR':str(runtime),'PATH':''},clear=True):
+                env=core.transcription_environment(True)
+            self.assertEqual(Path(env['PATH'].split(os.pathsep)[0]),runtime.resolve())
+
     def test_explicit_offline_missing_model_has_actionable_error(self):
         detail = ('huggingface_hub.errors.LocalEntryNotFoundError: Cannot find an '
                   'appropriate cached snapshot folder; outgoing traffic has been disabled')
@@ -37,22 +166,32 @@ class TimelineTests(unittest.TestCase):
         text='silence_start: 11.160312\nsilence_end: 12.067146 | silence_duration: 0.906834\n'
         self.assertEqual(core.parse_silencedetect(text),[{'start':11.160312,'end':12.067146}])
 
-    def test_aroll_motion_filter_is_seek_safe_and_directional(self):
-        push=core.framing_filter(1920,1080,30,150,'medium','push_in',.08)
-        pull=core.framing_filter(1920,1080,30,150,'medium_close','pull_out',.08)
-        self.assertIn("1+0.08*on/149",push)
-        self.assertIn("1+0.08*(1-on/149)",pull)
-        self.assertIn('zoompan=',push);self.assertIn('scale=2342:1318',pull)
+    def test_aroll_framing_filter_is_static(self):
+        medium=core.framing_filter(1920,1080,30,'medium')
+        close=core.framing_filter(1920,1080,30,'medium_close')
+        self.assertNotIn('zoompan=',medium);self.assertNotIn('zoompan=',close)
+        self.assertIn('scale=2342:1318',close)
 
-    def test_aroll_motion_filter_renders(self):
+    def test_aroll_static_framing_filter_renders(self):
         with tempfile.TemporaryDirectory() as folder:
             source=Path(folder)/'source.mp4';output=Path(folder)/'motion.mp4'
             core.run([core.FFMPEG,'-y','-v','error','-f','lavfi','-i','color=c=navy:s=320x180:r=30:d=1',
                       '-c:v','libx264','-pix_fmt','yuv420p',source])
-            core.run([core.FFMPEG,'-y','-v','error','-i',source,'-vf',core.framing_filter(320,180,30,30,'medium','push_in',.08),
+            core.run([core.FFMPEG,'-y','-v','error','-i',source,'-vf',core.framing_filter(320,180,30,'medium_close'),
                       '-frames:v','30','-c:v','libx264','-pix_fmt','yuv420p',output])
             info=core.probe(output);video=next(s for s in info['streams'] if s['codec_type']=='video')
             self.assertEqual((video['width'],video['height']),(320,180))
+
+    def test_legacy_aroll_motion_is_migrated_to_hard_cut(self):
+        project={'shots':[
+            {'kind':'A','camera':'medium','visual_change':'push_in','motion':'push_in'},
+            {'kind':'A','camera':'medium_close','visual_change':'pull_out','motion':'pull_out'},
+            {'kind':'B','motion':'push_in'}]}
+        self.assertTrue(core.normalize_aroll_hard_cuts(project))
+        self.assertEqual(project['shots'][0],{'kind':'A','camera':'medium_close','visual_change':'cut_in','motion':None})
+        self.assertEqual(project['shots'][1],{'kind':'A','camera':'medium','visual_change':'cut_out','motion':None})
+        self.assertEqual(project['shots'][2]['motion'],'push_in')
+        self.assertFalse(core.normalize_aroll_hard_cuts(project))
 
     def test_aroll_limit_counts_silence_tail_and_adjacent_runs(self):
         units=[{'id':0,'start':0,'end':4},{'id':1,'start':5,'end':9}]
@@ -115,30 +254,71 @@ class TimelineTests(unittest.TestCase):
         units=[{'id':i,'start':i*2+.2,'end':i*2+1.8,'text':f'原文{i}。'} for i in range(48)]
         p={'id':'test','segments':units,'duration':96.2,'shots':[],
            'options':{'broll_ratio':60,'max_shot':14},'revision':3}
-        def semantic(unit):
-            semantic_type='hook' if unit['id']==0 else 'summary' if unit['id']==47 else 'event'
-            return {'id':unit['id'],'text':unit['text'],'semantic_type':semantic_type,
-                    'visual_subject':'' if semantic_type in ('hook','summary') else '图书馆阅读',
-                    'importance':'normal','emotion':'neutral'}
-        responses=[{'segments':[semantic(unit) for unit in units[:45]]},
-                   {'segments':[semantic(unit) for unit in units[45:]]}]
+        def segment(segment_id, ids, role, semantic_type, subject=''):
+            return {'segment_id':segment_id,'candidate_ids':ids,
+                    'text':''.join(units[i]['text'] for i in ids),
+                    'semantic_type':semantic_type,'visual_role':role,'confidence':.94,
+                    'entities':[],'visual_subject':subject,'evidence_required':False,
+                    'evidence_target':None,'search_query':None,
+                    'stock_search_query':'library reading' if role=='B' else None,
+                    'stock_search_query_alt':['quiet library'] if role=='B' else [],
+                    'fallback':'A','recording_required':False,'recording_instruction':None,
+                    'motion_type':'M_NUMBER' if role=='M' else None,
+                    'generation_concept':None,'importance':3,
+                    'continuity_group':'CG01','reason':'整片视觉导演验收'}
+        response={'video_type':'general','overview':'测试','segments':[
+            segment('S001',[0],'A','hook'),
+            segment('S002',list(range(1,47)),'B','event','图书馆阅读'),
+            segment('S003',[47],'A','summary'),
+        ]}
         with patch.object(core,'read_project',side_effect=lambda _:copy.deepcopy(p)), \
              patch.object(core,'settings',return_value={'llm_provider':'deepseek','llm_api_key':'key'}), \
              patch.object(core,'progress'), patch.object(core,'save_project') as save, \
-             patch.object(core,'chat_json',side_effect=responses) as chat:
+             patch.object(core,'chat_json',return_value=response) as chat:
             core.plan('test')
         result=save.call_args.args[0];shots=result['shots']
         self.assertEqual((shots[0]['kind'],shots[-1]['kind']),('A','A'))
-        self.assertTrue(all(round(s['end']-s['start'],3)<=6.01 for s in shots if s['kind']=='B'))
+        self.assertEqual({s['visual_role'] for s in shots},{'A','B'})
+        self.assertTrue(all(round(s['end']-s['start'],3)<=5.01 for s in shots if s['kind']=='B'))
         self.assertEqual(result['segments'],units)
         self.assertEqual(len(result['candidate_segments']),48)
-        self.assertEqual(result['analysis']['llm_role'],'semantic_classification_only')
+        self.assertEqual(result['analysis']['llm_role'],'visual_director_semantics_only')
+        self.assertEqual(result['visual_master_plan']['segments'][0]['visual_role'],'A')
+        self.assertEqual(result['visual_master_plan']['segments'][1]['visual_role'],'B')
         core.validate_timeline(shots,p['duration'])
-        second_input=json.loads(chat.call_args_list[1].args[1][1]['content'])
-        self.assertNotIn('start',json.dumps(second_input,ensure_ascii=False))
-        self.assertNotIn('duration',json.dumps(second_input,ensure_ascii=False))
-        self.assertEqual(second_input['candidates'][0]['id'],45)
+        request=json.loads(chat.call_args.args[1][1]['content'])
+        self.assertNotIn('start',json.dumps(request,ensure_ascii=False))
+        self.assertNotIn('duration',json.dumps(request,ensure_ascii=False))
+        self.assertEqual(request['candidates'][0]['id'],0)
         self.assertEqual(p['shots'],[])
+
+    def test_visual_director_schema_failure_uses_legacy_storyboard_fallback(self):
+        units=[
+            {'id':0,'start':0,'end':2.8,'text':'主持人开场。'},
+            {'id':1,'start':3.0,'end':5.8,'text':'办公室里的工作场景。'},
+            {'id':2,'start':6.0,'end':8.8,'text':'主持人总结。'},
+        ]
+        p={'id':'fallback','segments':units,'duration':8.8,'shots':[],
+           'options':{'broll_ratio':60,'max_shot':14},'revision':0,'video_profile':'general'}
+        invalid={'video_type':'general','overview':'bad','segments':[
+            {'segment_id':'S001','candidate_ids':[0],'text':units[0]['text'],
+             'semantic_type':'hook','visual_role':'A'},
+        ]}
+        legacy={'segments':[
+            {'id':0,'text':units[0]['text'],'semantic_type':'hook','visual_subject':'','importance':'normal','emotion':'neutral'},
+            {'id':1,'text':units[1]['text'],'semantic_type':'event','visual_subject':'办公室工作','importance':'normal','emotion':'neutral'},
+            {'id':2,'text':units[2]['text'],'semantic_type':'summary','visual_subject':'','importance':'normal','emotion':'neutral'},
+        ]}
+        with patch.object(core,'read_project',side_effect=lambda _:copy.deepcopy(p)), \
+             patch.object(core,'settings',return_value={'llm_provider':'deepseek','llm_api_key':'key'}), \
+             patch.object(core,'progress'),patch.object(core,'save_project') as save, \
+             patch.object(core,'chat_json',side_effect=[invalid,invalid,legacy]) as chat:
+            core.plan('fallback')
+        result=save.call_args.args[0]
+        self.assertEqual(result['analysis']['visual_director_status'],'fallback')
+        self.assertEqual(result['shots'][0]['kind'],'A')
+        self.assertEqual(result['shots'][-1]['kind'],'A')
+        self.assertEqual(chat.call_count,3)
 
     def test_broll_split_preserves_a_and_selected_first_take(self):
         for duration in (4,4.001,4.84,5.92,7.84,9.14,16):
@@ -188,6 +368,82 @@ class TimelineTests(unittest.TestCase):
                 else:
                     download.assert_not_called()
                     self.assertEqual(p['shots'][1]['material_status'],'missing')
+
+    def test_stock_search_requests_a_larger_candidate_pool(self):
+        response=Mock(status_code=200);response.json.return_value={'videos':[]}
+        with patch.object(core.requests,'get',return_value=response) as get:
+            self.assertEqual(core.search_stock('library','pexels',{'pexels_api_key':'key'}),[])
+        self.assertEqual(core.CANDIDATE_LIMIT,12)
+        self.assertEqual(get.call_args.kwargs['params']['per_page'],12)
+        self.assertEqual(get.call_args.kwargs['params']['orientation'],'landscape')
+
+    def test_stock_search_follows_landscape_square_and_portrait_shapes(self):
+        pexels=Mock(status_code=200);pexels.json.return_value={'videos':[{
+            'id':1,'duration':8,'url':'https://pexels.example/video','user':{'name':'author'},'image':'https://example/thumb.jpg',
+            'video_files':[
+                {'file_type':'video/mp4','width':1920,'height':1080,'link':'https://example/land.mp4'},
+                {'file_type':'video/mp4','width':1080,'height':1080,'link':'https://example/square.mp4'},
+                {'file_type':'video/mp4','width':1080,'height':1920,'link':'https://example/portrait.mp4'},
+            ]}]}
+        for aspect,expected,orientation in (('16:9',(1920,1080),'landscape'),('1:1',(1080,1080),'square'),('9:16',(1080,1920),'portrait')):
+            with patch.object(core.requests,'get',return_value=pexels) as get:
+                result=core.search_stock('library','pexels',{'pexels_api_key':'key'},
+                                         {'aspect_ratio':aspect,'resolution':'1080p'})
+            self.assertEqual((result[0]['width'],result[0]['height']),expected)
+            self.assertEqual(result[0]['target_aspect_ratio'],aspect)
+            self.assertEqual(get.call_args.kwargs['params']['orientation'],orientation)
+
+        pixabay=Mock(status_code=200);pixabay.json.return_value={'hits':[
+            {'id':1,'duration':8,'pageURL':'https://example/1','user':'a','videos':{'large':{'width':1920,'height':1080,'url':'https://example/1.mp4'}}},
+            {'id':2,'duration':8,'pageURL':'https://example/2','user':'b','videos':{'large':{'width':1080,'height':1080,'url':'https://example/2.mp4'}}},
+            {'id':3,'duration':8,'pageURL':'https://example/3','user':'c','videos':{'large':{'width':1080,'height':1920,'url':'https://example/3.mp4'}}},
+        ]}
+        for aspect,expected_id in (('16:9','pixabay-1'),('1:1','pixabay-2'),('9:16','pixabay-3')):
+            with patch.object(core.requests,'get',return_value=pixabay):
+                result=core.search_stock('library','pixabay',{'pixabay_api_key':'key'},
+                                         {'aspect_ratio':aspect,'resolution':'1080p'})
+            self.assertEqual([item['id'] for item in result],[expected_id])
+
+    def test_switching_aspect_preserves_each_stock_selection(self):
+        project={'shots':[{'id':'b1','kind':'B','asset':'assets/land.mp4','source':{'provider':'pexels','id':'land'},
+                           'media_start':1,'material_status':'ready','material_error':None,'candidates':[{'id':'land'}]}]}
+        self.assertTrue(core.switch_broll_aspect(project,'16:9','9:16'))
+        shot=project['shots'][0]
+        self.assertIsNone(shot['asset'])
+        self.assertEqual(shot['material_status'],'pending')
+        shot.update(asset='assets/portrait.mp4',source={'provider':'pexels','id':'portrait'},media_start=0,
+                    material_status='ready',material_error=None,candidates=[{'id':'portrait'}])
+        self.assertTrue(core.switch_broll_aspect(project,'9:16','16:9'))
+        self.assertEqual(shot['asset'],'assets/land.mp4')
+        self.assertEqual(shot['source']['id'],'land')
+        self.assertTrue(core.switch_broll_aspect(project,'16:9','9:16'))
+        self.assertEqual(shot['asset'],'assets/portrait.mp4')
+        self.assertEqual(shot['source']['id'],'portrait')
+
+    def test_materials_randomizes_fresh_episode_wide_candidates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            p={'id':'test','options':{'source':'pexels'},'revision':0,'shots':[
+                {'id':'old','kind':'B','start':0,'end':4,'title':'旧素材','asset':'old.mp4','source':{'id':'used'}},
+                {'id':'host','kind':'A','start':4,'end':8,'title':'人物','asset':None,'source':None},
+                {'id':'next','kind':'B','start':8,'end':12,'title':'新画面','keywords':['library'],'asset':None,'source':None}]}
+            (folder/'old.mp4').touch()
+            found=[{'id':name,'duration':10,'width':1920,'height':1080}
+                   for name in ('used','first','middle','last')]
+            def save(updated):p.update(copy.deepcopy(updated))
+            def reverse(items):items.reverse()
+            with patch.object(core,'read_project',side_effect=lambda _:copy.deepcopy(p)), \
+                 patch.object(core,'settings',return_value={}),patch.object(core,'progress'), \
+                 patch.object(core,'project_dir',return_value=folder), \
+                 patch.object(core,'search_stock',return_value=found), \
+                 patch.object(core,'stash_candidates',side_effect=lambda pid,sid,cs:cs), \
+                 patch.object(core.random,'shuffle',side_effect=reverse), \
+                 patch.object(core,'save_project',side_effect=save), \
+                 patch.object(core,'download_candidate',side_effect=lambda pid,c:f'{c["id"]}.mp4') as download:
+                core.materials('test')
+            self.assertEqual(p['shots'][2]['source']['id'],'last')
+            self.assertNotEqual(p['shots'][2]['source']['id'],'used')
+            self.assertEqual(download.call_count,1)
 
     def test_complete_partition_only(self):
         units=[{'id':i} for i in range(5,9)]
@@ -255,6 +511,31 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(p,before); self.assertAlmostEqual(events[-1]['end'],12)
         self.assertEqual(''.join(e['text'] for e in events),p['segments'][0]['text'])
         self.assertTrue(all(e['end']>e['start'] for e in events))
+
+    def test_caption_lines_never_cut_a_latin_word_in_half(self):
+        text=('另一段来自 OpenAI 负责推理研究的 Noam Brown，他说 Hugging Face 事件真正说明的是'
+              '人们低估了 AI，而 Gemini 由第三方机构 Irregular 执行。')
+        parts=core._caption_parts(text)
+        self.assertEqual(''.join(parts).replace(' ',''),text.replace(' ',''))
+        for token in ('OpenAI','Noam Brown','Hugging Face','Gemini','Irregular'):
+            self.assertTrue(any(token in part for part in parts),f'{token} 被拆断了：{parts}')
+        self.assertFalse(any(part.strip() in ('is，','lar 执行。') for part in parts))
+
+    def test_caption_lines_break_at_clauses_and_keep_the_punctuation(self):
+        parts=core._caption_parts('据 The Verge 援引《华尔街日报》的报道，今年 5 月，Gemini 越了界。')
+        self.assertTrue(parts[0].endswith('，'),parts)
+        self.assertTrue(parts[-1].endswith('。'),parts)
+        for part in parts:
+            # A clause whose tail would be too short to read stays whole, so a
+            # line may run a couple of characters past the display limit.
+            self.assertLessEqual(len(part),26,part)
+            self.assertGreaterEqual(len(part.strip()),4,part)
+
+    def test_punctuation_only_caption_fragments_join_the_line_they_close(self):
+        self.assertEqual(core._caption_parts('而是“身份误认”，'), ['而是“身份误认”，'])
+        quoted=core._caption_parts('特朗普政府则直接把 AI 安全危机称为“骗局”。')
+        self.assertEqual(len(quoted),1,quoted)
+        self.assertTrue(quoted[0].endswith('。'))
 
     def test_credentials_are_not_public(self):
         public=core.settings(); private=core.settings(True)

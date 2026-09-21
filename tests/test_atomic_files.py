@@ -81,3 +81,47 @@ class AtomicFileTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError,'locked'):
                     with server.operation(project['id'],'test'):self.fail('must not run')
             self.assertEqual(core.ACTIVE,before)
+
+    def test_two_projects_can_start_and_conflicting_stages_use_a_slot(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(core,'PROJECTS',Path(folder)):
+            first=core.create_project('first');second=core.create_project('second')
+            for project in (first,second):
+                project['script']={'text':'test','provider':'azure-v1','speaker':'zh-CN-XiaoxiaoNeural',
+                                   'language':'Chinese','speed':1,'reference':''}
+                core.save_project(project)
+            before=dict(core.ACTIVE)
+            try:
+                with patch.object(core.threading,'Thread'):
+                    core.start_job(first['id'],'tts')
+                    core.start_job(second['id'],'tts')
+                self.assertIn(first['id'],core.ACTIVE)
+                self.assertIn(second['id'],core.ACTIVE)
+                active=0;peak=0;guard=threading.Lock()
+                def same_stage(pid):
+                    nonlocal active,peak
+                    with core.stage_slot(pid,'tts','配音生成'):
+                        with guard:active+=1;peak=max(peak,active)
+                        threading.Event().wait(.03)
+                        with guard:active-=1
+                with patch.object(core,'progress'):
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        list(pool.map(same_stage,(first['id'],second['id'])))
+                self.assertEqual(peak,1)
+                overlap=[];barrier=threading.Barrier(2)
+                def different_stage(item):
+                    pid,resource=item
+                    with core.stage_slot(pid,resource,resource):
+                        barrier.wait(timeout=2);overlap.append(resource)
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    list(pool.map(different_stage,((first['id'],'plan'),(second['id'],'materials'))))
+                self.assertEqual(set(overlap),{'plan','materials'})
+            finally:
+                core.ACTIVE.clear();core.ACTIVE.update(before)
+
+    def test_h3_skips_local_aroll_slot_but_infinitetalk_uses_it(self):
+        with tempfile.TemporaryDirectory() as folder,patch.object(core,'PROJECTS',Path(folder)):
+            project=core.create_project('provider scheduling')
+            project['aroll_provider_id']='autodl_h3';core.save_project(project)
+            self.assertIsNone(core.aroll_stage_resource(project['id']))
+            project['aroll_provider_id']='infinitetalk';core.save_project(project)
+            self.assertEqual(core.aroll_stage_resource(project['id']),'aroll')

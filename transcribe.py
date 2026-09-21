@@ -4,11 +4,12 @@ from pathlib import Path
 from speech_units import align_script_to_words, phrase_segments
 from atomic_files import atomic_json
 from worker_progress import atomic_json as write_progress
+from whisper_models import resolve_local_model
 
 audio,output,status,model,device,language=sys.argv[1:7]
 reference_path=Path(sys.argv[7]) if len(sys.argv)>7 else None
 root=Path(__file__).resolve().parent
-local_model=root/'engines'/'faster-whisper'/model
+local_model=resolve_local_model(root,model)
 download_root=root/'engines'/'faster-whisper'/'cache'
 from faster_whisper import WhisperModel
 import ctranslate2
@@ -17,10 +18,11 @@ def report(t,message):
     write_progress(Path(status),{'time':t,'message':message})
 
 devices=['cuda','cpu'] if device=='auto' and ctranslate2.get_cuda_device_count()>0 else ['cpu' if device=='auto' else device]
+fallback_reason=''
 for i,chosen in enumerate(devices):
     try:
         report(0,f'正在使用 {chosen.upper()} 加载 Whisper {model}')
-        model_ref=str(local_model) if (local_model/'model.bin').is_file() else model
+        model_ref=str(local_model) if local_model else model
         engine=WhisperModel(model_ref,device=chosen,compute_type='float16' if chosen=='cuda' else 'int8',
                             download_root=str(download_root),local_files_only=False,cpu_threads=4,num_workers=1)
         chunks,info=engine.transcribe(audio,language=language or None,beam_size=5,vad_filter=True,condition_on_previous_text=False,word_timestamps=True)
@@ -36,9 +38,11 @@ for i,chosen in enumerate(devices):
             reference=reference_path.read_text(encoding='utf-8')
             segments=align_script_to_words(reference,all_words,0.0,audio_end)
             alignment='script-punctuation-word-v1';engine+=' + script alignment'
-        atomic_json(Path(output),{'segments':segments,'language':info.language,'engine':engine,'alignment':alignment})
+        atomic_json(Path(output),{'segments':segments,'language':info.language,'engine':engine,'alignment':alignment,
+                                 'device':chosen,'fallback_reason':fallback_reason})
         break
-    except Exception:
+    except Exception as exc:
         if i==len(devices)-1: raise
         if 'engine' in globals(): del engine
-        report(0,'GPU 转录不可用，正在回退到 CPU')
+        fallback_reason=str(exc)[-500:]
+        report(0,'GPU 转录暂不可用，正在回退到 CPU；完成后会显示实际设备')
