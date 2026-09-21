@@ -380,6 +380,18 @@ def asset_path(pid, name):
     if not p.is_relative_to(base.resolve()) or not p.is_file(): raise ValueError('素材不存在')
     return p
 
+def project_relative(path, base):
+    """Project-relative POSIX path, tolerant of short-name or symlinked roots.
+
+    asset_path() resolves its result while project_dir() may not, and Windows
+    hands back 8.3 short names for temporary directories, so the same folder can
+    be spelled two ways. Compare the resolved forms before giving up.
+    """
+    try:
+        return Path(path).relative_to(base).as_posix()
+    except ValueError:
+        return Path(path).resolve().relative_to(Path(base).resolve()).as_posix()
+
 def run(command, cwd=None, timeout=1800):
     out = subprocess.run([str(x) for x in command], cwd=cwd, capture_output=True, timeout=timeout,
                          creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
@@ -413,7 +425,7 @@ def _copy_project_asset(source, target, field, filename):
     destination=PROJECTS/target['id']/'assets'/(filename+source_path.suffix.lower())
     try:shutil.copy2(source_path,destination)
     except OSError:return None
-    return destination.relative_to(PROJECTS/target['id']).as_posix()
+    return project_relative(destination,PROJECTS/target['id'])
 
 
 def _inherit_project_defaults(project, source):
@@ -1347,7 +1359,7 @@ def download_candidate(pid,c):
             if not any(s['codec_type']=='video' for s in info['streams']) or info['duration']<=0: raise ValueError('下载结果不是有效视频')
             temp.replace(path)
         finally: temp.unlink(missing_ok=True)
-    return str(path.relative_to(project_dir(pid))).replace('\\','/')
+    return project_relative(path,project_dir(pid))
 
 def randomized_stock_candidates(candidates, needed):
     """Prefer clips long enough for the shot, but randomize within each tier."""
@@ -1960,7 +1972,7 @@ def render(pid, allow_aroll_placeholder=False, export_kind='final'):
         segment_duration=float(shot['output_end'])-float(shot['output_start'])
         role=shot.get('visual_role')
         fallback=bool(shot['kind']=='B' and not shot.get('asset') and role not in ('M',))
-        actual.append({'shot_id':shot['id'],'kind':shot['kind'],'visual':str(visual.relative_to(folder)).replace('\\','/'),'fallback':fallback,
+        actual.append({'shot_id':shot['id'],'kind':shot['kind'],'visual':project_relative(visual,folder),'fallback':fallback,
                        'visual_role':role,'legacy_roll_type':shot.get('legacy_roll_type') or shot['kind'],
                        'material_strategy':shot.get('material_strategy'),
                        'aroll_placeholder':shot['kind']=='A' and not a_ready,
@@ -2019,7 +2031,7 @@ def render(pid, allow_aroll_placeholder=False, export_kind='final'):
                                      'validation':{'duration':info['duration'],'audio':True}})
     concat.unlink(missing_ok=True)
     with LOCK:
-        current=read_project(pid); current['exports'].append({'id':export.name,'file':str(out.relative_to(folder)).replace('\\','/'),'kind':export_kind,
+        current=read_project(pid); current['exports'].append({'id':export.name,'file':project_relative(out,folder),'kind':export_kind,
             'created_at':time.time(),'revision':p['revision'],'duration':info['duration'],'source_duration':p['duration'],'size':f'{width} × {height}',
             'auto_edit':bool(plan),'removed_seconds':float(plan['removed_seconds']) if plan else 0,'bgm':bool(bgm),
             'fallbacks':sum(s['fallback'] for s in actual),'aroll_placeholders':sum(s['aroll_placeholder'] for s in actual),'looped':sum(s['looped'] for s in actual)})

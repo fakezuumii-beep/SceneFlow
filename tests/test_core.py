@@ -537,6 +537,18 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(len(quoted),1,quoted)
         self.assertTrue(quoted[0].endswith('。'))
 
+    def test_project_relative_survives_a_differently_spelled_root(self):
+        # Windows returns 8.3 short names for temporary directories, so the same
+        # folder can be spelled two ways and a plain relative_to() raises.
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            target=root/'assets'/'clip.mp4'
+            target.parent.mkdir(parents=True)
+            target.write_bytes(b'x')
+            self.assertEqual(core.project_relative(target,root),'assets/clip.mp4')
+            odd=root/'assets'/'..'
+            self.assertEqual(core.project_relative(target,odd),'assets/clip.mp4')
+
     def test_credentials_are_not_public(self):
         public=core.settings(); private=core.settings(True)
         for key,value in private.items():

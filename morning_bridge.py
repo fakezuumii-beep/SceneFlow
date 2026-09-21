@@ -34,6 +34,18 @@ def _inside(base: Path, relative: str) -> Path:
     return value
 
 
+def _relative(path: Path, base: Path) -> str:
+    """POSIX path relative to the workspace, tolerant of path spelling.
+
+    Windows returns 8.3 short names for temporary directories, so a resolved
+    path and an unresolved root can name the same folder differently.
+    """
+    try:
+        return Path(path).relative_to(base).as_posix()
+    except ValueError:
+        return Path(path).resolve().relative_to(Path(base).resolve()).as_posix()
+
+
 def _http_url(value: object) -> bool:
     if not isinstance(value, str):
         return False
@@ -228,9 +240,9 @@ def archive_final(project: dict, video: Path, export_id: str, kind: str = "final
                     value.update(chunk)
             return value.digest()
         if target.stat().st_size == video.stat().st_size and digest(target) == digest(video):
-            return str(target.relative_to(ROOT)).replace("\\", "/")
+            return _relative(target, ROOT)
         target = history_dir / f"final-{export_id}.mp4"
         if target.exists():
             raise ValueError("晨报历史中的同名成片已经存在")
     shutil.copy2(video, target)
-    return str(target.relative_to(ROOT)).replace("\\", "/")
+    return _relative(target, ROOT)

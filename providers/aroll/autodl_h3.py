@@ -209,7 +209,7 @@ class AutoDLH3Provider(ArollProvider):
         if provenance.get('provider')!=self.id or not asset:return False
         path=c.project_dir(project['id'])/asset
         if not path.is_file():return False
-        try:source=c.host_image(project).relative_to(c.project_dir(project['id'])).as_posix()
+        try:source=c.project_relative(c.host_image(project),c.project_dir(project['id']))
         except (OSError,ValueError):return False
         return (provenance.get('source')==source and
                 abs(float(provenance.get('audio_start',-1))-float(shot['start']))<.002 and
@@ -542,7 +542,7 @@ def _promote_shot(provider, pid, folder, image, resolution, plan, chunk_results)
     asset = folder / 'assets' / f'aroll-h3-{plan["asset_key"]}.mp4'
     _assemble(normalized, asset, plan['total_frames'])
     info = c.probe(asset)
-    relative = asset.relative_to(folder).as_posix()
+    relative = c.project_relative(asset, folder)
     with c.LOCK:
         current = c.read_project(pid)
         target = next(item for item in current['shots'] if item['id'] == shot['id'])
@@ -566,7 +566,7 @@ def _promote_shot(provider, pid, folder, image, resolution, plan, chunk_results)
                        'h3_native_max_seconds': MAX_SECONDS,
                       'program_hard_cuts': max(0, len(normalized) - 1),
                       'chunk_durations': [round(c.probe(path)['duration'], 3) for path in normalized],
-                      'source': image.relative_to(folder).as_posix(), 'source_kind': 'image',
+                      'source': c.project_relative(image, folder), 'source_kind': 'image',
                       'audio':current.get('audio'),
                       'audio_start': shot['start'], 'audio_end': shot['end'],
                       'remote_inputs': ['host_image', 'shot_audio'], 'billing': 'per generated second'})
