@@ -42,6 +42,10 @@ def split_script(text, limit=80):
     return result
 
 
-def signature(text, speaker, language, provider='azure-v1', speed=1.0):
-    payload = [text, speaker, language, provider, round(float(speed), 3), 'azure-tts-v1']
+def signature(text, speaker, language, provider='azure-v1', speed=1.0, reference=''):
+    if provider == 'azure-v1' and not reference:
+        payload = [text, speaker, language, provider, round(float(speed), 3), 'azure-tts-v1']
+    else:
+        payload = [text, speaker, language, provider, round(float(speed), 3), reference,
+                   'sceneflow-voice-clone-v1']
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()[:24]

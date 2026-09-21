@@ -13,6 +13,8 @@ from tts_common import LANGUAGES, signature
 
 FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 AZURE_PROVIDER = 'azure-v1'
+SEED_PROVIDER = 'seed-audio'
+INDEX_PROVIDER = 'indextts25'
 AZURE_VOICES = {
     'Chinese': {
         'zh-CN-XiaoxiaoNeural': '中文女声 · 晓晓（默认）',
@@ -42,11 +44,15 @@ def status():
     import core as c
     from providers.aroll import get_aroll_provider
 
-    azure = {'name': 'Azure TTS V1', 'ready': importlib.util.find_spec('edge_tts') is not None, 'online': True}
-    selected=get_aroll_provider(c.settings(True));selected_status=selected.status()
+    import voice_tts
+    cfg=c.settings(True)
+    azure = {'name': 'Azure TTS V1', 'ready': importlib.util.find_spec('edge_tts') is not None,
+             'configured': True, 'online': True}
+    seed=voice_tts.seed_status(cfg);index=voice_tts.index_status(cfg,check_online=True)
+    selected=get_aroll_provider(cfg);selected_status=selected.status()
     return {
         'tts': {**azure, 'provider': AZURE_PROVIDER},
-        'providers': {AZURE_PROVIDER: azure},
+        'providers': {AZURE_PROVIDER: azure,SEED_PROVIDER:seed,INDEX_PROVIDER:index},
         'musetalk': aroll.installation_status(),
         'aroll': {'id':selected.id,'name':selected.name,'short_name':selected.short_name,**selected_status},
         'azure_voices': AZURE_VOICES,
@@ -64,7 +70,31 @@ def stop(proc):
             proc.wait(timeout=10)
 
 
-def validate_script(body):
+def provider_status(provider, settings=None, check_online=False):
+    import core as c
+    import voice_tts
+    settings=settings or c.settings(True)
+    if provider==AZURE_PROVIDER:
+        ready=importlib.util.find_spec('edge_tts') is not None
+        return {'name':'Azure TTS V1','ready':ready,'configured':True,'online':True,
+                'message':'Azure TTS V1 已就绪' if ready else 'Azure TTS V1 组件待安装'}
+    if provider==SEED_PROVIDER:return voice_tts.seed_status(settings)
+    if provider==INDEX_PROVIDER:return voice_tts.index_status(settings,check_online=check_online)
+    raise ValueError('请选择支持的配音引擎')
+
+
+def test_provider_connection(provider, settings=None):
+    import core as c
+    import voice_tts
+    settings=settings or c.settings(True)
+    if provider==SEED_PROVIDER:return voice_tts.test_seed_connection(settings)
+    if provider==INDEX_PROVIDER:return voice_tts.test_index_connection(settings)
+    state=provider_status(provider,settings,check_online=True)
+    if not state['ready']:raise ValueError(state['message'])
+    return {'ok':True,'message':state['message']}
+
+
+def validate_script(body, require_reference=False):
     text = body.get('text', '')
     if not isinstance(text, str) or not text.strip() or len(text) > 20000 or '\0' in text:
         raise ValueError('请输入 1–20000 字的播客原稿')
@@ -72,18 +102,44 @@ def validate_script(body):
     if language not in LANGUAGES:
         raise ValueError('配音语言无效')
     provider = str(body.get('provider') or AZURE_PROVIDER).strip().lower()
-    if provider != AZURE_PROVIDER:
-        raise ValueError('当前版本仅支持 Azure TTS V1 配音')
+    if provider not in (AZURE_PROVIDER,SEED_PROVIDER,INDEX_PROVIDER):
+        raise ValueError('请选择支持的配音引擎')
+    if provider in (SEED_PROVIDER,INDEX_PROVIDER) and language!='Chinese':
+        raise ValueError('豆包 SeedAudio 与 IndexTTS 2.5 当前使用中文配音')
+    reference=str(body.get('reference') or '').strip().replace('\\','/')
+    if reference and (not reference.startswith('assets/') or '..' in reference.split('/') or
+                      not reference.lower().endswith(('.wav','.mp3','.m4a','.aac','.flac','.ogg'))):
+        raise ValueError('参考声音路径无效，请重新上传')
     speaker = str(body.get('speaker') or '').strip()
-    if speaker not in AZURE_VOICES[language]:
+    if provider==AZURE_PROVIDER and speaker not in AZURE_VOICES[language]:
         speaker = AZURE_DEFAULT[language]
+    elif provider==SEED_PROVIDER:
+        if speaker not in ('seed-reference','seed-natural-female','seed-natural-male'):
+            speaker='seed-reference' if reference else 'seed-natural-female'
+        if require_reference and speaker=='seed-reference' and not reference:
+            raise ValueError('请先上传一段参考声音，再使用 SeedAudio 声纹复刻')
+    elif provider==INDEX_PROVIDER:
+        speaker='index-reference'
+        if require_reference and not reference:
+            raise ValueError('请先上传一段参考声音，再使用 IndexTTS 2.5 本地配音')
     try:
         speed = round(float(body.get('speed', 1.0)), 2)
     except (TypeError, ValueError):
         raise ValueError('配音语速无效')
     if speed < .5 or speed > 2:
         raise ValueError('配音语速需在 0.5–2.0 倍之间')
-    return {'text': text.strip(), 'provider': provider, 'speaker': speaker, 'language': language, 'speed': speed}
+    return {'text': text.strip(), 'provider': provider, 'speaker': speaker, 'language': language,
+            'speed': speed, 'reference': reference}
+
+
+def project_script(project, require_reference=False):
+    """Use the project's uploaded voice as the authoritative clone reference."""
+    body=dict(project.get('script') or {})
+    provider=str(body.get('provider') or AZURE_PROVIDER).strip().lower()
+    speaker=str(body.get('speaker') or '').strip()
+    if provider==INDEX_PROVIDER or (provider==SEED_PROVIDER and speaker=='seed-reference'):
+        body['reference']=str(project.get('voice_reference') or body.get('reference') or '')
+    return validate_script(body,require_reference=require_reference)
 
 
 def needs_tts(project):
@@ -93,62 +149,69 @@ def needs_tts(project):
     if not project.get('audio'):
         return True
     tts = project.get('tts') or {}
-    compared = ('text', 'speaker', 'language') + tuple(key for key in ('provider', 'speed') if key in script)
-    if tts.get('engine') and all(tts.get(key) == script.get(key) for key in compared):
-        return False
     try:
-        return tts.get('signature') != signature(**validate_script(script))
+        effective=project_script(project)
+        compared = ('text', 'speaker', 'language') + tuple(
+            key for key in ('provider', 'speed', 'reference') if key in effective)
+        if tts.get('engine') and all(tts.get(key) == effective.get(key) for key in compared):
+            return False
+        return tts.get('signature') != signature(**effective)
     except (TypeError, ValueError):
         return True
 
 
 def synthesize(pid):
     import core as c
+    import voice_tts
 
     project = c.read_project(pid)
-    script = validate_script(project.get('script') or {})
-    if not status()['providers'][AZURE_PROVIDER]['ready']:
-        raise ValueError('Azure TTS V1 组件未安装，请重新运行「安装工作台.bat」')
+    script = project_script(project,require_reference=True)
+    current=provider_status(script['provider'],c.settings(True),check_online=script['provider']==INDEX_PROVIDER)
+    if not current['ready']:
+        raise ValueError(current['message'])
     key = signature(**script)
     folder = c.project_dir(pid) / 'assets/tts' / key
     folder.mkdir(parents=True, exist_ok=True)
-    request = folder / 'request.json'
-    c.atomic_json(request, {**script, 'folder': str(folder), 'ffmpeg': str(c.FFMPEG), 'timeout': 45})
-    progress_file = folder / 'progress.json'
-    progress_file.unlink(missing_ok=True)
-    env = os.environ.copy()
-    env.update(PYTHONIOENCODING='utf-8')
-    c.progress(pid, '文字配音', 1, '正在启动联网 Azure TTS V1；已完成的段落会复用')
-    with (folder / 'worker.log').open('wb') as log:
-        proc = subprocess.Popen(
-            [sys.executable, str(c.ROOT / 'azure_tts_worker.py'), str(request)],
-            env=env,
-            stdout=log,
-            stderr=log,
-            creationflags=FLAGS,
-        )
-        began = time.monotonic()
-        try:
-            while proc.poll() is None:
-                percent = 1
-                message = '正在连接 Azure TTS V1…'
-                try:
-                    current = json.loads(progress_file.read_text(encoding='utf-8'))
-                    percent = 2 + 94 * current['done'] / max(1, current['total'])
-                    message = current['message']
-                except (OSError, ValueError, KeyError):
-                    pass
-                c.progress(pid, '文字配音', percent, message)
-                if time.monotonic() - began > 6 * 3600:
-                    raise RuntimeError('配音超过六小时，请缩短原稿；已完成段落保留')
-                time.sleep(.5)
-            if proc.returncode:
-                detail = (folder / 'worker.log').read_text(encoding='utf-8', errors='replace')[-1400:]
-                raise RuntimeError('Azure TTS V1 联网配音失败：' + detail)
-        finally:
-            stop(proc)
+    if script['provider']==AZURE_PROVIDER:
+        request = folder / 'request.json'
+        c.atomic_json(request, {**script, 'folder': str(folder), 'ffmpeg': str(c.FFMPEG), 'timeout': 45})
+        progress_file = folder / 'progress.json'
+        progress_file.unlink(missing_ok=True)
+        env = os.environ.copy()
+        env.update(PYTHONIOENCODING='utf-8')
+        c.progress(pid, '文字配音', 1, '正在启动联网 Azure TTS V1；已完成的段落会复用')
+        with (folder / 'worker.log').open('wb') as log:
+            proc = subprocess.Popen(
+                [sys.executable, str(c.ROOT / 'azure_tts_worker.py'), str(request)],
+                env=env,
+                stdout=log,
+                stderr=log,
+                creationflags=FLAGS,
+            )
+            began = time.monotonic()
+            try:
+                while proc.poll() is None:
+                    percent = 1
+                    message = '正在连接 Azure TTS V1…'
+                    try:
+                        progress_state = json.loads(progress_file.read_text(encoding='utf-8'))
+                        percent = 2 + 94 * progress_state['done'] / max(1, progress_state['total'])
+                        message = progress_state['message']
+                    except (OSError, ValueError, KeyError):
+                        pass
+                    c.progress(pid, '文字配音', percent, message)
+                    if time.monotonic() - began > 6 * 3600:
+                        raise RuntimeError('配音超过六小时，请缩短原稿；已完成段落保留')
+                    time.sleep(.5)
+                if proc.returncode:
+                    detail = (folder / 'worker.log').read_text(encoding='utf-8', errors='replace')[-1400:]
+                    raise RuntimeError('Azure TTS V1 联网配音失败：' + detail)
+            finally:
+                stop(proc)
+        result = json.loads((folder / 'result.json').read_text(encoding='utf-8'))
+    else:
+        result=voice_tts.synthesize(pid,project,script,folder,key)
     c.progress(pid, '文字配音', 98, '正在建立音轨与原稿字幕时间')
-    result = json.loads((folder / 'result.json').read_text(encoding='utf-8'))
     master = folder / 'master.wav'
     temporary = folder / 'master.tmp.wav'
     c.run([c.FFMPEG, '-y', '-v', 'error', '-i', folder / 'combined.wav', '-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', temporary])
@@ -161,7 +224,9 @@ def synthesize(pid):
         project = c.read_project(pid)
         if project.get('audio'):
             project.setdefault('audio_history', []).append({key: project.get(key) for key in ('audio', 'audio_name', 'tts', 'duration')})
-        label = AZURE_VOICES[script['language']][script['speaker']]
+        label = (AZURE_VOICES[script['language']][script['speaker']] if script['provider']==AZURE_PROVIDER else
+                 {'seed-reference':'豆包 SeedAudio · 参考声音','seed-natural-female':'豆包 SeedAudio · 自然女声',
+                  'seed-natural-male':'豆包 SeedAudio · 自然男声','index-reference':'IndexTTS 2.5 · 参考声音'}[script['speaker']])
         project.update(
             script=script,
             audio=master.relative_to(c.project_dir(pid)).as_posix(),
@@ -173,7 +238,7 @@ def synthesize(pid):
             shots=[],
             analysis=None,
             waveform=waveform,
-            tts={**result, 'signature': key, 'text': script['text']},
+            tts={**result, **script, 'signature': key},
             transcription={'engine': result['engine'], 'phrase_timing': 'awaiting-script-alignment', 'language': script['language']},
         )
         project['revision'] += 1
