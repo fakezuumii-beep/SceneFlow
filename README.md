@@ -6,11 +6,13 @@
 
 **免费开源 · 支持本地运行 · 一键生成单人播客视频**
 
-**不会剪辑也能用：输入一段文案或音频，SceneFlow 自动完成配音、分镜、A-roll/B-roll、人物口型、字幕和视频导出。**
+**不会剪辑也能用：输入一段文案或音频，SceneFlow 自动完成配音、视觉导演、A/B/E/R/M/G 分镜、人物口型、字幕和视频导出。**
+
+当前正式执行 A / B / E / M / G 五条链路：A 走现有 A-roll，B 走库存素材，E 自动搜索真实网页并截图，M 生成数据动效片段，G 使用 MiniMax H3 的原始多参工作流生成非主播场景，不复用 A-roll 对口型 Prompt。R 保留 Schema 兼容，当前自动转为证据截图，失败后回退主播。
 
 适合想做知识口播、单人播客、讲书、解说类视频，但不想学习复杂剪辑软件和 AI 工作流的用户。
 
-*SceneFlow is an open-source AI podcast video generator for Windows that turns scripts or audio into complete videos with automatic storyboarding, A-roll/B-roll selection, MuseTalk lip-sync, subtitles and MP4 export.*
+*SceneFlow is an open-source AI podcast video generator for Windows that turns scripts or audio into complete videos with visual-director planning, A/B/E/R/M/G routing, local lip-sync, subtitles and MP4 export.*
 
 让人物开口说话，自动配画面、加字幕、剪成片。<br>
 你负责想说什么，SceneFlow 负责把它变成视频。
@@ -48,11 +50,13 @@ SceneFlow 是一个面向普通用户的免费开源 AI 播客视频生成工具
 | 🎙️ 一段音频 | 转录内容，继续完成分镜与视频制作 |
 | 🧑 一个主持人形象 | 让人物跟着声音开口说话 |
 | 🌿 想讲的内容 | 自动搜索匹配的素材，与人物镜头交替呈现 |
-| 🎬 一次点击 | 合成人物、画面、声音与字幕，导出 16:9 MP4 |
+| 🎬 一次点击 | 合成人物、画面、声音与字幕，导出 16:9、1:1 或 9:16 MP4 |
 
 生成之后也能继续改：换配图、重新生成人物镜头、调整镜头边界，再导出你满意的版本。任务中断后，可以继续补齐未完成的步骤。
 
-> **免费与本地运行说明：** SceneFlow 自有代码免费开源，默认提供 MuseTalk 本地口型方案，转录、口型推理与视频合成可在本机完成。默认文字配音需要联网，分镜 AI 和素材检索也取决于所选服务；第三方 API 可能收费。“支持本地运行”不代表默认配置完全离线，也不代表所有外接服务免费。
+在「高级制作设置」中还可以启用**自动精剪**：SceneFlow 会先生成一份可下载的 Edit Plan，按真实音频识别并压缩长停顿，同时重映射画面、字幕和素材入点；也可开启关键词高亮、标题 / 信息卡片，并导入背景音乐自动压低。原始音频和原分镜不会被覆盖，只有导出成片使用精剪时间线。
+
+> **免费与本地运行说明：** SceneFlow 自有代码免费开源，提供 LatentSync 1.6 本地高质量口型方案，并保留 MuseTalk 作为无需外部 ComfyUI 的默认与快速回退；转录、口型推理与视频合成可在本机完成。默认文字配音需要联网，分镜 AI 和素材检索也取决于所选服务；第三方 API 可能收费。“支持本地运行”不代表默认配置完全离线，也不代表所有外接服务免费。
 
 ## 👤 适合谁使用？
 
@@ -102,7 +106,7 @@ https://github.com/user-attachments/assets/55a74a21-31e8-45e3-9542-f78d23a54b78
 
 **① 配好连接，让分镜、素材和人物一起工作**
 
-分镜 AI、素材源、人物口型集中设置。默认提供 MuseTalk 本地方案，也保留其他引擎与自定义工作流的配置入口。
+分镜 AI、素材源、人物口型集中设置。MuseTalk 1.5 支持 FP32 与官方人脸解析的最高质量模式，也可选择 LatentSync 1.6、InfiniteTalk、Wav2Lip、AutoDL MiniMax H3 或自定义工作流。
 
 ![连接与设置：分镜模型、素材搜索 API、MuseTalk 本地人物口型](docs/showcase/02-settings.png)
 
@@ -152,17 +156,18 @@ https://github.com/user-attachments/assets/55a74a21-31e8-45e3-9542-f78d23a54b78
 
 ## 👄 关于口型效果，说点实在的
 
-做这个项目，是想让更多人能用上自动播客制作。**SceneFlow 默认使用 MuseTalk 作为本地人物口型同步方案，可将主持人循环视频与配音自动合成为 A-roll 人物讲话镜头。** 不用为了生成人物说话就先购买云端视频服务。
+做这个项目，是想让更多人能用上自动播客制作。**SceneFlow 已支持 LatentSync 1.6 本地高质量人物口型同步，并保留 MuseTalk 作为默认、快速预览与回退。** 两者都可以把主持人循环视频与配音合成为 A-roll 人物讲话镜头，不需要按次购买云端视频生成。
 
 代价也很直接：有些镜头看起来难免有一点“假”，嘴部融合、表情和动作自然度还有提升空间。上面的案例就是当前本地方案的实际效果，大家可以先看，再决定是否适合自己的内容。
 
 如果追求更好的画面，后续会继续完善外接工作流。**下面是作者在自己的素材与工作流中的主观实测体验，不是统一条件下的模型排名，也不代表当前版本都已接通：**
 
-- **ComfyUI + InfiniteTalk：** 在作者目前测试的几种方案里，人物说话的整体效果最好，可作为更高质量本地工作流的探索方向；本地推理无需按次支付云端视频生成费。
-- **LTX / MiniMax：** 作者测试中出现过一些人物偏移，仍需根据素材和工作流继续调试。
+- **LatentSync 1.6：** 已接入本机 ComfyUI 的固定工作流，口型质量优先；RTX 2080 Ti 22GB 可运行，但速度明显慢于 MuseTalk。
+- **ComfyUI + InfiniteTalk：** 可从人物图片生成包含表情和细微动作的新视频；本地推理无需按次支付云端视频生成费。
+- **AutoDL MiniMax H3 自动对口型：** 已接入专用图片 + 音频同步工作流，支持 480P/768P/1080P 横竖屏；SceneFlow 会自动按 15 秒以内分段、续查任务、立即下载并校验后拼回 A-roll。每个任务沿用同一张主持人参考图，人物、背景和动作稳定性仍取决于输入素材与云端模型。
 - **Seedance 等在线模型：** 预算充足的朋友也可以探索，成片质感有机会再上一个档次；实际效果、费用和可用能力取决于服务与接入方式。
 
-**当前版本状态：** MuseTalk 与 Wav2Lip 已接入一键生成；ComfyUI / 在线 API 目前支持保存配置与测试连接，自动提交生成、注入素材和取回视频尚待开放。Wav2Lip 有第三方非商业使用限制，模型与素材的使用范围请查阅 [第三方说明](THIRD_PARTY_NOTICES.md)。
+**当前版本状态：** LatentSync 1.6、MuseTalk、Wav2Lip、单人 InfiniteTalk Q8 与 AutoDL MiniMax H3 自动对口型均已接入 A-roll 生成；通用 ComfyUI / 在线 API 仍只支持保存配置与测试连接。H3 会上传人物图片和对应镜头音频并按生成秒数计费；Wav2Lip 有第三方非商业使用限制。详情见 [AutoDL H3 使用说明](docs/autodl-h3.md) 与 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 ## 🚧 先把一个人的节目做好，再让更多角色登场
 
@@ -172,7 +177,9 @@ https://github.com/user-attachments/assets/55a74a21-31e8-45e3-9542-f78d23a54b78
 
 - [x] 单人播客：文案 / 音频 → 人物口型 + 配图 + 字幕 + 成片
 - [x] 成片预览、逐镜换素材、人物镜头重生成
-- [ ] 完善 ComfyUI 与在线视频模型的自动生成接入
+- [x] [单人 InfiniteTalk Q8：已有 ComfyUI 工作流自动生成与取回 A-roll](docs/infinitetalk.md)
+- [x] [AutoDL MiniMax H3：图片 + 原音频自动生成、续查、下载并拼回 A-roll](docs/autodl-h3.md)
+- [ ] 完善其他通用 ComfyUI 与在线视频模型的自动生成接入
 - [ ] 双人播客：对话、角色切换与镜头配合
 - [ ] 多角色内容与短剧等更丰富的创作形式
 
@@ -194,6 +201,6 @@ Star 能让更多人发现它，也让我知道这个方向值得继续做。欢
 
 ## 致谢与许可
 
-感谢 MuseTalk、Wav2Lip、faster-whisper、FFmpeg、edge-tts 等项目，以及提供素材服务的平台。SceneFlow 把这些能力串成一条面向创作者的制作流程。
+感谢 LatentSync、MuseTalk、Wav2Lip、MiniMax H3、faster-whisper、FFmpeg、edge-tts 等项目，以及 AutoDL 和其他素材服务平台。SceneFlow 把这些能力串成一条面向创作者的制作流程。
 
 本仓库自有代码使用 [MIT License](LICENSE)。第三方代码、模型及素材仍遵循各自许可证与平台条款，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
