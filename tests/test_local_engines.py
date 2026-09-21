@@ -1,8 +1,8 @@
-import copy, tempfile, unittest
+import base64, copy, tempfile, unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
 from fastapi.testclient import TestClient
-import core, server, local_engines as le, tts_common as tc, model_client
+import core, server, local_engines as le, tts_common as tc, model_client, voice_tts
 
 class LocalEngineTests(unittest.TestCase):
     def test_phrases_preserve_script_and_cache_changes_with_voice(self):
@@ -13,16 +13,53 @@ class LocalEngineTests(unittest.TestCase):
         self.assertEqual(tc.split_script('你好，今天我们测试新的联网配音。'),['你好，今天我们测试新的联网配音。'])
         self.assertNotEqual(tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese'),tc.signature('原稿','zh-CN-YunxiNeural','Chinese'))
         self.assertNotEqual(tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1),tc.signature('原稿','zh-CN-XiaoxiaoNeural','Chinese','azure-v1',1.1))
+        self.assertNotEqual(tc.signature('原稿','index-reference','Chinese','indextts25',1,'assets/a.wav'),tc.signature('原稿','index-reference','Chinese','indextts25',1,'assets/b.wav'))
 
-    def test_azure_is_the_only_provider(self):
+    def test_three_tts_providers_are_validated(self):
         default=le.validate_script({'text':'默认配音'})
         self.assertEqual(default['provider'],'azure-v1')
         self.assertEqual(default['speaker'],'zh-CN-XiaoxiaoNeural')
         self.assertEqual(default['speed'],1.0)
         self.assertEqual(le.validate_script({'text':'新原稿','speaker':'unknown','language':'Chinese'})['speaker'],'zh-CN-XiaoxiaoNeural')
         self.assertEqual(le.validate_script({'text':'English text','provider':'azure-v1','speaker':'unknown','language':'English'})['speaker'],'en-US-AvaNeural')
-        with self.assertRaisesRegex(ValueError,'仅支持 Azure'):
+        seed=le.validate_script({'text':'豆包','provider':'seed-audio','speaker':'seed-natural-female','language':'Chinese'})
+        self.assertEqual(seed['speaker'],'seed-natural-female')
+        index=le.validate_script({'text':'本地','provider':'indextts25','reference':'assets/voice.wav','language':'Chinese'},require_reference=True)
+        self.assertEqual(index['speaker'],'index-reference')
+        with self.assertRaisesRegex(ValueError,'参考声音'):
+            le.validate_script({'text':'本地','provider':'indextts25','language':'Chinese'},require_reference=True)
+        with self.assertRaisesRegex(ValueError,'支持的配音引擎'):
             le.validate_script({'text':'本地','provider':'local','language':'Chinese'})
+
+    def test_indextts25_graph_matches_proven_workbench_nodes(self):
+        graph=voice_tts.build_index_prompt('你好','voice.wav','speaker',1.0,42,'SceneFlow/test')
+        self.assertEqual(graph['1']['class_type'],'JR_IndexTTS25_Loader')
+        self.assertEqual(graph['3']['class_type'],'JR_IndexTTS25_VoicePreset')
+        self.assertEqual(graph['4']['class_type'],'JR_IndexTTS25_Generate')
+        self.assertEqual(graph['4']['inputs']['language'],'ZH')
+        self.assertEqual(graph['4']['inputs']['duration_factor'],1.0)
+        self.assertEqual(graph['7']['class_type'],'SaveAudio')
+
+    def test_seed_connection_check_never_spends_a_generation(self):
+        with patch.object(voice_tts.requests,'post') as post:
+            result=voice_tts.test_seed_connection({'tts_seed_api_key':'configured-secret'})
+        self.assertTrue(result['ok'])
+        post.assert_not_called()
+
+    def test_seed_audio_request_uses_existing_api_contract_without_leaking_key(self):
+        response=Mock(status_code=200,reason='OK')
+        response.json.return_value={'code':0,'audio':base64.b64encode(b'RIFF'+b'\0'*80).decode()}
+        script={'speaker':'seed-natural-female'}
+        with tempfile.TemporaryDirectory() as root,patch.object(voice_tts.requests,'post',return_value=response) as post:
+            folder=Path(root);raw=folder/'voice.audio';request_file=folder/'request.json'
+            voice_tts._seed_chunk({'tts_seed_api_key':'private-key'},script,None,'你好',raw,request_file)
+            self.assertGreater(raw.stat().st_size,44)
+            saved=request_file.read_text(encoding='utf-8')
+            self.assertNotIn('private-key',saved)
+            body=post.call_args.kwargs['json']
+            self.assertEqual(body['model'],'seed-audio-1.0')
+            self.assertEqual(body['audio_config']['sample_rate'],24000)
+            self.assertEqual(post.call_args.kwargs['headers']['X-Api-Key'],'private-key')
 
     def test_draft_does_not_destroy_existing_work_and_blocks_stale_export(self):
         with tempfile.TemporaryDirectory() as root,patch.object(core,'PROJECTS',Path(root)),TestClient(server.app) as client:
@@ -30,7 +67,9 @@ class LocalEngineTests(unittest.TestCase):
             p.update(audio='assets/old.wav',segments=[{'text':'旧声音'}],shots=[{'id':'old'}],exports=[{'file':'old.mp4'}]);core.save_project(p)
             r=client.put(f'/api/projects/{pid}/script',json={'text':'新原稿','speaker':'zf_xiaoni','language':'Chinese'})
             self.assertEqual(r.status_code,200,r.text)
-            for key in ('audio','segments','shots','exports'):self.assertEqual(r.json()[key],p[key])
+            for key in ('audio','segments','exports'):self.assertEqual(r.json()[key],p[key])
+            self.assertEqual(r.json()['shots'][0]['id'],'old')
+            self.assertEqual(r.json()['shots'][0]['visual_role'],'A')
             self.assertEqual(client.post(f'/api/projects/{pid}/jobs',json={'action':'render'}).status_code,400)
             core.ACTIVE[pid]={'cancel':False}
             try:self.assertEqual(client.put(f'/api/projects/{pid}/script',json={'text':'other'}).status_code,400)

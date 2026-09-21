@@ -57,9 +57,9 @@ Ensure-Directory $app
 Ensure-Directory (Join-Path $stage 'data')
 
 $rootFiles = @(
-    'server.py','core.py','storyboard.py','storyboard_rules.json','atomic_files.py',
+    'server.py','core.py','auto_edit.py','morning_bridge.py','storyboard.py','storyboard_rules.json','atomic_files.py',
     'aroll.py','musetalk_worker.py','wav2lip_worker.py','wav2lip_setup.py','worker_progress.py','model_client.py',
-    'transcribe.py','speech_units.py','local_engines.py','tts_common.py',
+    'transcribe.py','whisper_models.py','speech_units.py','local_engines.py','tts_common.py',
     'azure_tts_worker.py','engine_setup.py','requirements.txt','requirements-media.txt','requirements-wav2lip.txt',
     'install-portable.ps1'
 )
@@ -76,6 +76,15 @@ foreach ($name in $rootFiles) {
 }
 Copy-Tree (Join-Path $root 'static') (Join-Path $app 'static')
 Copy-Tree (Join-Path $root 'providers') (Join-Path $app 'providers')
+Copy-Tree (Join-Path $root 'visual_director') (Join-Path $app 'visual_director')
+Copy-Tree (Join-Path $root 'motion') (Join-Path $app 'motion')
+$morningApp = Join-Path $app 'ai_morning_editor'
+Ensure-Directory $morningApp
+foreach ($name in @('__init__.py','__main__.py','collect.py','rank.py','verify.py','writer.py','README.md','运行晨报.bat')) {
+    $source = Join-Path $root "ai_morning_editor\$name"
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "晨报编辑器文件缺失：$name" }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $morningApp $name) -Force
+}
 Ensure-Directory (Join-Path $app 'assets\hosts')
 $hostAssetNames = @(
     'solo-host-v1-1080.jpg',

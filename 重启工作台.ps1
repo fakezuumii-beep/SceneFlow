@@ -10,7 +10,10 @@ foreach ($project in $projects) {
 $listeners = Get-NetTCPConnection -LocalPort 8766 -State Listen -ErrorAction SilentlyContinue
 foreach ($listener in $listeners) {
     $serverProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)"
-    if ($serverProcess.CommandLine -notlike "*$scriptPath*") { throw '8766 端口属于其他程序，未停止该程序。' }
+    $relativeServer = $serverProcess.CommandLine -match '(^|[\s"])server\.py([\s"]|$)'
+    if ($serverProcess.CommandLine -notlike "*$scriptPath*" -and -not $relativeServer) {
+        throw '8766 端口属于其他程序，未停止该程序。'
+    }
 }
 if ($CheckOnly) { Write-Host 'Restart script checks passed. No process was stopped.'; return }
 foreach ($listener in $listeners) {

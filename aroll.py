@@ -7,8 +7,8 @@ ROOT=Path(__file__).resolve().parent
 ENGINES=ROOT/'engines'
 FPS=25
 CONTEXT=.2
-ADAPTER_VERSION='musetalk15-direct-static-v2'
-VIDEO_ADAPTER_VERSION='musetalk15-direct-video-v4-shared-runs'
+ADAPTER_VERSION='musetalk15-direct-static-v3-quality'
+VIDEO_ADAPTER_VERSION='musetalk15-direct-video-v5-quality-shared-runs'
 DEFAULT_PROVIDER_IDENTITY={'provider':'musetalk','provider_version':'musetalk15-provider-v1','model':'MuseTalk 1.5',
                            'adapter':VIDEO_ADAPTER_VERSION+'|'+ADAPTER_VERSION,'workflow_hash':None}
 
@@ -27,7 +27,9 @@ def required_files():
     repo=ENGINES/'MuseTalk';models=repo/'models'
     return [repo/'musetalk/models/unet.py',models/'musetalkV15/unet.pth',models/'musetalkV15/musetalk.json',
             models/'sd-vae/config.json',models/'sd-vae/diffusion_pytorch_model.bin',models/'whisper/config.json',
-            models/'whisper/pytorch_model.bin',models/'whisper/preprocessor_config.json',models/'face_detection_yunet_2023mar.onnx']
+            models/'whisper/pytorch_model.bin',models/'whisper/preprocessor_config.json',
+            models/'face-parse-bisent/79999_iter.pth',models/'face-parse-bisent/resnet18-5c106cde.pth',
+            models/'face_detection_yunet_2023mar.onnx']
 
 def installation_status(check_online=False):
     missing=[x.relative_to(ROOT).as_posix() for x in required_files() if not x.is_file() or x.stat().st_size<100]
@@ -40,12 +42,13 @@ def installation_status(check_online=False):
 def stamp(path):
     stat=path.stat();return [str(path),stat.st_size,stat.st_mtime_ns]
 
-def contiguous_runs(shots):
+def contiguous_runs(shots, group_key=None):
     """Return timeline-adjacent A-roll shots that must share one inference pass."""
     runs=[];current=[]
     for shot in shots:
         adjacent=(current and shot.get('kind')=='A' and
-                  abs(float(shot['start'])-float(current[-1]['end']))<=.002)
+                  abs(float(shot['start'])-float(current[-1]['end']))<=.002 and
+                  (group_key is None or group_key(shot)==group_key(current[-1])))
         if shot.get('kind')=='A':
             if not adjacent and current:runs.append(current);current=[]
             current.append(shot)
@@ -54,8 +57,8 @@ def contiguous_runs(shots):
     if current:runs.append(current)
     return runs
 
-def shot_run(p,s):
-    return next((run for run in contiguous_runs(p.get('shots',[])) if any(x.get('id')==s.get('id') for x in run)),[s])
+def shot_run(p,s,group_key=None):
+    return next((run for run in contiguous_runs(p.get('shots',[]),group_key) if any(x.get('id')==s.get('id') for x in run)),[s])
 
 def run_signature(p,run,provider_identity=None):
     import core as c
@@ -64,9 +67,9 @@ def run_signature(p,run,provider_identity=None):
              stamp(c.host_media(p)),run[0]['start'],run[-1]['end'],FPS,CONTEXT]
     return hashlib.sha256(json.dumps(content,ensure_ascii=False).encode()).hexdigest()[:24]
 
-def signature(p,s,provider_identity=None):
+def signature(p,s,provider_identity=None,group_key=None):
     if not p.get('audio'):return ''
-    content=[run_signature(p,shot_run(p,s),provider_identity),s['start'],s['end']]
+    content=[run_signature(p,shot_run(p,s,group_key),provider_identity),s['start'],s['end']]
     return hashlib.sha256(json.dumps(content,ensure_ascii=False).encode()).hexdigest()[:24]
 
 def is_ready(p,s,provider_identity=None):
@@ -85,7 +88,7 @@ def decorate(p):
         if s['kind']=='A':s['aroll_ready']=is_ready(p,s)
     return p
 
-def prepare_video_chunk(source,target,start,duration):
+def prepare_video_chunk(source,target,start,duration,crf=18):
     """Create a frame-aligned forward loop at the absolute podcast time."""
     import core as c
     frames=math.ceil(duration*FPS)+2
@@ -94,7 +97,8 @@ def prepare_video_chunk(source,target,start,duration):
     phase=(round(start*FPS)%max(1,round(loop_duration*FPS)))/FPS
     c.run([c.FFMPEG,'-y','-v','error','-stream_loop','-1','-i',source,'-an',
            '-vf',f'fps={FPS},trim=start_frame={round(phase*FPS)},setpts=PTS-STARTPTS','-frames:v',str(frames),
-           '-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p','-threads','4','-movflags','+faststart',temp])
+           '-c:v','libx264','-preset','slow' if crf<=14 else 'veryfast','-crf',str(crf),
+           '-pix_fmt','yuv420p','-threads','4','-movflags','+faststart',temp])
     if not valid_chunk(temp,frames):raise RuntimeError('循环视频片段帧数校验失败')
     temp.replace(target)
 
@@ -115,15 +119,16 @@ def valid_video(path,expected_duration=None):
                 and (expected_duration is None or abs(info['duration']-expected_duration)<=.12))
     except (ValueError,RuntimeError,OSError):return False
 
-def trim_chunk(raw,target,offset,frames):
-    return trim_chunk_frames(raw,target,round(offset*FPS),frames)
+def trim_chunk(raw,target,offset,frames,crf=18):
+    return trim_chunk_frames(raw,target,round(offset*FPS),frames,crf)
 
-def trim_chunk_frames(raw,target,start_frame,frames):
+def trim_chunk_frames(raw,target,start_frame,frames,crf=18):
     import core as c
     temp=target.with_suffix('.part.mp4')
     c.run([c.FFMPEG,'-y','-v','error','-i',raw,'-an','-vf',
            f'tpad=stop_mode=clone:stop_duration=0.24,trim=start_frame={start_frame}:end_frame={start_frame+frames},setpts=PTS-STARTPTS,fps={FPS}',
-           '-frames:v',str(frames),'-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p','-threads','4',temp])
+           '-frames:v',str(frames),'-c:v','libx264','-preset','slow' if crf<=14 else 'veryfast',
+           '-crf',str(crf),'-pix_fmt','yuv420p','-threads','4',temp])
     if not valid_chunk(temp,frames):raise RuntimeError('A-roll 片段帧数不足，已保留原始推理结果以便重试')
     temp.replace(target)
 
@@ -176,11 +181,13 @@ def _run_worker_once(pid,request,progress_file):
                 return logpath.read_text(encoding='utf-8',errors='replace')[-1800:]
         finally:stop(proc)
 
-def generate(pid,shot_id=None,provider_identity=None):
+def generate(pid,shot_id=None,provider_identity=None,runtime_config=None):
     import core as c
     p=c.read_project(pid);runs=contiguous_runs(p['shots'])
     if shot_id and not any(any(s['id']==shot_id for s in run) for run in runs):raise ValueError('未找到选中的 A-roll 镜头')
     provider_identity=provider_identity or DEFAULT_PROVIDER_IDENTITY
+    runtime_config=dict(runtime_config or {})
+    crf=int(runtime_config.get('crf',18))
     pending=[run for run in runs if ((not shot_id and any(not is_ready(p,s,provider_identity) for s in run)) or
                                      (shot_id and any(s['id']==shot_id for s in run)))]
     if not pending:return
@@ -193,12 +200,14 @@ def generate(pid,shot_id=None,provider_identity=None):
         audio=cache/'audio.wav'
         if not audio.exists():c.run([c.FFMPEG,'-y','-v','error','-ss',str(context_start),'-i',c.asset_path(pid,p['audio']),'-t',str(context_end-context_start),'-vn','-ac','1','-ar','16000','-c:a','pcm_s16le',audio])
         if is_video:
-            source=cache/'host.mp4';prepare_video_chunk(c.host_media(p),source,context_start,context_end-context_start)
+            source=cache/'host.mp4';prepare_video_chunk(c.host_media(p),source,context_start,context_end-context_start,crf)
         else:
-            source=cache/'host.jpg'
+            source=cache/('host.png' if crf<=14 else 'host.jpg')
             if not source.exists():
                 from PIL import Image,ImageOps
-                with Image.open(c.host_image(p)) as image:ImageOps.fit(image.convert('RGB'),(1920,1080),method=Image.Resampling.LANCZOS).save(source,quality=95)
+                with Image.open(c.host_image(p)) as image:
+                    fitted=ImageOps.fit(image.convert('RGB'),(1920,1080),method=Image.Resampling.LANCZOS)
+                    fitted.save(source,compress_level=2) if source.suffix=='.png' else fitted.save(source,quality=95)
         items=[]
         for s in run:
             sig=signature(p,s,provider_identity);start_frame=round((float(s['start'])-context_start)*FPS)
@@ -208,18 +217,21 @@ def generate(pid,shot_id=None,provider_identity=None):
                          'context_start':context_start,'context_end':context_end,'source':source,'audio':audio,'items':items,
                          'asset_key':stable+suffix})
     batch=batch_size()
-    tasks=[{'video':str(x['source']),'audio':str(x['audio']),'output':str(x['raw']),'ffmpeg':str(c.FFMPEG),'batch_size':batch}
+    tasks=[{'video':str(x['source']),'audio':str(x['audio']),'output':str(x['raw']),'ffmpeg':str(c.FFMPEG),
+            'batch_size':batch,**runtime_config}
            for x in prepared if not valid_video(x['raw'],c.probe(x['audio'])['duration'])]
     if tasks:
         runroot=folder/'aroll-cache'/('run-'+uuid.uuid4().hex[:10]);runroot.mkdir(parents=True,exist_ok=True)
-        run_worker(pid,{'repo':str(ENGINES/'MuseTalk'),'progress':str(runroot/'progress.json'),'tasks':tasks},runroot/'progress.json')
+        run_worker(pid,{'repo':str(ENGINES/'MuseTalk'),'progress':str(runroot/'progress.json'),
+                        'precision':runtime_config.get('precision','float16'),'tasks':tasks},runroot/'progress.json')
     total=sum(len(x['items']) for x in prepared);written=0
     for run_item in prepared:
         run_start_frame=run_item['items'][0]['start_frame']
         run_end_frame=run_item['items'][-1]['start_frame']+run_item['items'][-1]['frames']
         run_frames=run_end_frame-run_start_frame;finished=run_item['cache']/'finished-run.mp4'
         try:
-            if not valid_chunk(finished,run_frames):trim_chunk_frames(run_item['raw'],finished,run_start_frame,run_frames)
+            if not valid_chunk(finished,run_frames):
+                trim_chunk_frames(run_item['raw'],finished,run_start_frame,run_frames,crf)
             asset=folder/'assets'/f'aroll-run-{run_item["asset_key"]}.mp4';temp=asset.with_suffix('.part.mp4')
             c.run([c.FFMPEG,'-y','-v','error','-i',finished,'-an','-c:v','copy','-movflags','+faststart',temp])
             info=c.probe(temp);expected=run_frames/FPS
@@ -234,6 +246,7 @@ def generate(pid,shot_id=None,provider_identity=None):
                         aroll_provenance={'provider':provider_identity['provider'],'engine':'MuseTalk 1.5','runtime':'local',
                         'provider_version':provider_identity['provider_version'],'model':provider_identity.get('model'),
                         'workflow_hash':provider_identity.get('workflow_hash'),'adapter':VIDEO_ADAPTER_VERSION if is_video else ADAPTER_VERSION,
+                        'quality_config':runtime_config,
                         'source':c.host_media(p).relative_to(folder).as_posix(),'source_kind':'video' if is_video else 'image',
                         'loop_mode':'forward' if is_video else None,'fps':FPS,'duration':item['frames']/FPS,'continuous_asset_duration':info['duration'],
                         'audio_start':item['shot']['start'],'audio_end':item['shot']['end'],'continuous_run_start':run_item['run'][0]['start'],

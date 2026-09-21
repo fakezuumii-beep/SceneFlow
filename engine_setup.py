@@ -14,6 +14,8 @@ VAE_REPO = 'stabilityai/sd-vae-ft-mse'
 VAE_REV = '31f26fdeee1355a5c34592e401dd41e45d25a493'
 WHISPER_REPO = 'openai/whisper-tiny'
 WHISPER_REV = '169d4a4341b33bc18d8881c4b69c2e104e1cc0af'
+FACE_PARSE_REPO = 'ManyOtherFunctions/face-parse-bisent'
+FACE_PARSE_REV = '0073b233a5a3c4b1377d4dbf49245017938a72b5'
 OPENCV_ZOO_REV = '47534e27c9851bb1128ccc0102f1145e27f23f98'
 YUNET_SHA256 = '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4'
 YUNET_URL = f'https://raw.githubusercontent.com/opencv/opencv_zoo/{OPENCV_ZOO_REV}/models/face_detection_yunet/face_detection_yunet_2023mar.onnx'
@@ -139,6 +141,8 @@ def setup_models():
     model(MUSETALK_REPO,MUSETALK_MODEL_REV,models,['musetalkV15/unet.pth','musetalkV15/musetalk.json'])
     model(VAE_REPO,VAE_REV,models/'sd-vae',['config.json','diffusion_pytorch_model.bin'])
     model(WHISPER_REPO,WHISPER_REV,models/'whisper',['config.json','pytorch_model.bin','preprocessor_config.json'])
+    model(FACE_PARSE_REPO,FACE_PARSE_REV,models/'face-parse-bisent',
+          ['79999_iter.pth','resnet18-5c106cde.pth'])
     download(YUNET_URL,models/'face_detection_yunet_2023mar.onnx',sha=YUNET_SHA256)
 
 def ready_manifest(env,device):
